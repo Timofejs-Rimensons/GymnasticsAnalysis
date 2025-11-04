@@ -6,7 +6,7 @@ function Header() {
     return (
         <header className={styles.header}>
             <div className={styles.headerContainer}>
-                {/* Логотип */}
+                {/* Logo */}
                 <a 
                     href="#about" 
                     className={styles.logo}
