@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+pydantic-settings
+
+# ML & Video Processing
+mediapipe
+opencv-python
+numpy
+
+# Data Export
+pandas
+reportlab
+
+# Utils
+python-dotenv
