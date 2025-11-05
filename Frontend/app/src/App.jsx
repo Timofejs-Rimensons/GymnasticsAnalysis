@@ -1,3 +1,4 @@
+// App.jsx
 import React from 'react'
 import MainPage from './components/Pages/MainPage'
 import './App.css'

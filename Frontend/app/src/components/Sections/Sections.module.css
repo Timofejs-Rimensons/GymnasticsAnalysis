@@ -1,0 +1,180 @@
+/* Main container */
+.videoUploadForm {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  font-family: Arial, sans-serif;
+  box-sizing: border-box;
+  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Hidden file input */
+.hiddenFileInput {
+  display: none;
+}
+
+/* Upload button wrapper (fixed at top) */
+.buttonGroup {
+  position: absolute;       /* fixed at top */
+  top: 100px;             /* distance from top */
+  left: 40px;             /* center horizontally */
+  width: 250;
+  max-width: 300px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+  border-radius: 8px;
+}
+
+/* Upload button */
+.uploadButton {
+  background-color: #007304 !important; /* green */
+  color: white !important;
+  transition: background-color 0.3s ease;
+}
+
+.uploadButton:hover {
+  background-color: #00a405 !important; /* darker green */
+}
+
+/* Status messages */
+.statusMessage {
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-top: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  text-align: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.statusSuccess {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.statusError {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+/* Video list container below fixed button */
+.videoBlock {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  margin-top: 120px; /* leave space for fixed button */
+  max-height: calc(100vh - 140px); /* leave some space for viewport */
+  overflow-y: auto; /* scroll if many videos */
+  padding-bottom: 24px; /* extra space at bottom */
+}
+
+/* Individual video item */
+.videoItem {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Video name/title */
+.videoName {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #7b7b7b;
+  margin: 0 0 8px 0;
+}
+
+/* Video container */
+.videoContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+/* Video wrapper */
+.videoWrapper {
+  width: 640px;      /* natural width of video */
+  max-width: 100%;   /* shrink on smaller screens */
+  height: 360px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin-top: 16px;
+}
+
+/* Video player */
+.videoPlayer {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Processing and error states */
+.videoProcessing,
+.videoError {
+  text-align: center;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  width: 100%;
+  max-width: 640px;
+}
+
+.videoProcessing {
+  background: #ffebf0;
+  color: #6b7280;
+}
+
+.videoError {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* Preparing text */
+.preparingText {
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin: 8px 0;
+}
+
+/* Tooltip that floats above content */
+.tooltip {
+  position: fixed;
+  pointer-events: none;
+  color: #fff;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  z-index: 2000;
+  white-space: nowrap;
+}
+
+.downloadSection {
+  margin-top: 5px;
+  text-align: center;
+}
+
+.downloadBtn {
+  background-color: #007304;
+  color: #9c9c9c;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.downloadBtn:hover {
+  background-color: #00a405;
+}
