@@ -435,3 +435,4 @@ FodyWeavers.xsd
 # Data files
 *.pdf
 *.csv
+*.json
