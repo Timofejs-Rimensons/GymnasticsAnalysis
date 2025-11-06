@@ -19,7 +19,7 @@ class MediapipeSegmentationService:
             - bbox_size: width and height of bounding box in pixels
         """
         if landmarks is None:
-            return None, None, None
+            return None, None, None, None
 
         selected_indices = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]
 
@@ -108,7 +108,7 @@ class MediapipeSegmentationService:
         fps = int(cap.get(cv2.CAP_PROP_FPS))
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*'H264')
         out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
 
         frame_idx = 0
