@@ -73,7 +73,7 @@ def organize_videos(input_folder, output_folder, valid_videos):
 
 if __name__ == "__main__":
     # === CONFIG ===
-    input_txt = "to_scrape_from.txt"
+    input_txt = "dirty_data.txt"
     videos_source = "dataset/spreidsprong"
     data_folder = "clean_dataset/spreidsprong"
 
