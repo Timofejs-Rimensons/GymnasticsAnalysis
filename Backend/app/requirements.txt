@@ -1,0 +1,7 @@
+matplotlib
+mediapipe==0.10.21
+numpy
+opencv-contrib-python
+opencv-python
+pandas
+scipy
