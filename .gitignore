@@ -439,4 +439,10 @@ FodyWeavers.xsd
 # Data files
 *.pdf
 *.csv
-*.json
+
+# Vite
+dist/
+dist-ssr/
+
+# Tests
+coverage/
