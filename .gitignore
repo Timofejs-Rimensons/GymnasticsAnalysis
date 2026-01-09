@@ -15,8 +15,8 @@
 *.userprefs
 
 # venvs
-mediapipevenv/
-tensorflowvenv/
+*venv/
+testvenv/
 
 # Mono auto generated files
 mono_crash.*
@@ -345,6 +345,7 @@ paket-files/
 
 # Python Tools for Visual Studio (PTVS)
 **/__pycache__/
+*/__init__.py
 *.pyc
 
 # Cake - Uncomment if you are using it
@@ -439,4 +440,3 @@ FodyWeavers.xsd
 # Data files
 *.pdf
 *.csv
-*.json

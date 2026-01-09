@@ -1,13 +1,9 @@
+import logging
 import cv2
 import mediapipe as mp
-import numpy as np
-import warnings
-import json
-import os
-warnings.filterwarnings("ignore", category=UserWarning)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['GLOG_minloglevel'] = '2' 
+logging.getLogger('mediapipe').setLevel(logging.ERROR)
 
+import numpy as np
 
 class MediapipeSegmentationRepository:
     """
@@ -32,50 +28,67 @@ class MediapipeSegmentationRepository:
     # Core pose normalization
     # ------------------------------------------------------------ #
 
-    def _normalize_pose(self, landmarks, frame_w, frame_h):
+    def _normalize_pose(self, pose_landmarks, frame_width, frame_height):
         """
+        Normalizes pose landmarks to a person-centric coordinate system.
+
+        This method takes raw pose landmarks from MediaPipe and converts them into a
+        normalized representation that is independent of the person's position and
+        scale in the video frame.
+
+        Args:
+            pose_landmarks: A MediaPipe PoseLandmarks object containing the detected
+                            landmarks for a single frame.
+            frame_width (int): The width of the video frame.
+            frame_height (int): The height of the video frame.
+
         Returns:
-            pose_3d   : (13, 3) normalized person-centric
-            reference : (2,) mid-hip in pixels
-            bbox_size : (2,)
-            min_xy    : (2,)
+            A tuple containing:
+            - normalized_pose (numpy.ndarray): A (13, 3) array of normalized
+              person-centric pose landmarks.
+            - mid_hip_reference (numpy.ndarray): A (2,) array representing the
+              mid-hip reference point in pixel coordinates.
+            - bounding_box_size (numpy.ndarray): A (2,) array representing the
+              size of the bounding box around the pose.
+            - min_coordinates (numpy.ndarray): A (2,) array representing the
+              minimum x and y coordinates of the bounding box.
         """
 
-        if landmarks is None:
+        if pose_landmarks is None:
             return None, None, None, None
 
         # Convert to pixel coordinates
-        coords = np.array([
+        pixel_coordinates = np.array([
             [
-                landmarks.landmark[i].x * frame_w,
-                landmarks.landmark[i].y * frame_h,
-                landmarks.landmark[i].z
+                landmark.x * frame_width,
+                landmark.y * frame_height,
+                landmark.z
             ]
-            for i in self.joint_ids
+            for landmark in [pose_landmarks.landmark[i] for i in self.joint_ids]
         ])
 
         # Mid-hip reference
-        left_hip, right_hip = coords[7], coords[8]
-        reference = (left_hip + right_hip)[:2] / 2
+        left_hip, right_hip = pixel_coordinates[7], pixel_coordinates[8]
+        mid_hip_reference = (left_hip + right_hip)[:2] / 2
 
-        coords_shifted = coords.copy()
-        coords_shifted[:, :2] -= reference
+        shifted_coordinates = pixel_coordinates.copy()
+        shifted_coordinates[:, :2] -= mid_hip_reference
 
         # Bounding box
-        min_xy = coords_shifted[:, :2].min(axis=0)
-        max_xy = coords_shifted[:, :2].max(axis=0)
-        bbox_size = max_xy - min_xy
-        bbox_size[bbox_size == 0] = 1.0
+        min_coordinates = shifted_coordinates[:, :2].min(axis=0)
+        max_coordinates = shifted_coordinates[:, :2].max(axis=0)
+        bounding_box_size = max_coordinates - min_coordinates
+        bounding_box_size[bounding_box_size == 0] = 1.0
 
         # Normalize to [0,1]
-        pose_3d = coords_shifted.copy()
-        pose_3d[:, 0] = (coords_shifted[:, 0] - min_xy[0]) / bbox_size[0]
-        pose_3d[:, 1] = (coords_shifted[:, 1] - min_xy[1]) / bbox_size[1]
+        normalized_pose = shifted_coordinates.copy()
+        normalized_pose[:, 0] = (shifted_coordinates[:, 0] - min_coordinates[0]) / bounding_box_size[0]
+        normalized_pose[:, 1] = (shifted_coordinates[:, 1] - min_coordinates[1]) / bounding_box_size[1]
 
         # Scale normalize depth (optional but recommended)
-        pose_3d[:, 2] /= np.linalg.norm(bbox_size)
+        normalized_pose[:, 2] /= np.linalg.norm(bounding_box_size)
 
-        return pose_3d, reference, bbox_size, min_xy
+        return normalized_pose, mid_hip_reference, bounding_box_size, min_coordinates
 
     # ------------------------------------------------------------ #
     # Video processing
@@ -83,19 +96,34 @@ class MediapipeSegmentationRepository:
 
     def process_video(self, input_video_path):
         """
-        Full pipeline:
-        video → list of frame dicts + (T, 13, 3) tensor
-        """
+        Processes a video to extract normalized pose data for each frame.
 
-        cap = cv2.VideoCapture(input_video_path)
-        if not cap.isOpened():
+        This method reads a video file, applies MediaPipe Pose estimation to each
+        frame, normalizes the detected poses, and returns the results as both a list
+        of frame-specific data and a stacked tensor.
+
+        Args:
+            input_video_path (str): The path to the input video file.
+
+        Returns:
+            A tuple containing:
+            - frames (list): A list of dictionaries, where each dictionary
+              contains the normalized pose data for a single frame.
+            - pose_tensor (numpy.ndarray): A (T, 13, 3) tensor containing the
+              stacked normalized poses for all frames, where T is the total
+              number of frames.
+            - mask (numpy.ndarray): A boolean array of shape (T,) indicating
+              which frames were successfully processed.
+        """
+        video_capture = cv2.VideoCapture(input_video_path)
+        if not video_capture.isOpened():
             raise IOError(f"Cannot open video: {input_video_path}")
 
-        frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_width = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         frames = []
-        poses_3d = []
+        normalized_poses = []
 
         with self.mp_pose.Pose(
             model_complexity=2,
@@ -103,80 +131,102 @@ class MediapipeSegmentationRepository:
             min_tracking_confidence=0.5
         ) as pose:
             
-            i = 0
-            while cap.isOpened():
-                i += 1
-                success, frame = cap.read()
+            while video_capture.isOpened():
+                success, frame = video_capture.read()
                 if not success:
                     break
 
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 result = pose.process(frame_rgb)
 
-                pose_3d, ref, bbox, min_xy = self._normalize_pose(
+                normalized_pose, mid_hip_reference, bounding_box_size, min_coordinates = self._normalize_pose(
                     result.pose_landmarks,
-                    frame_w,
-                    frame_h
+                    frame_width,
+                    frame_height
                 )
 
                 frames.append({
-                    "pose_3d": pose_3d,
-                    "reference": ref,
-                    "bbox_size": bbox,
-                    "min_xy": min_xy
+                    "pose_3d": normalized_pose,
+                    "reference": mid_hip_reference,
+                    "bbox_size": bounding_box_size,
+                    "min_xy": min_coordinates
                 })
 
-                poses_3d.append(
-                    pose_3d if pose_3d is not None else None
+                normalized_poses.append(
+                    normalized_pose if normalized_pose is not None else None
                 )
 
-        cap.release()
+        video_capture.release()
 
-        tensor_3d, mask = self._stack_tensor(poses_3d)
+        pose_tensor, mask = self._stack_tensor(normalized_poses)
 
-        return frames, tensor_3d, mask
+        return frames, pose_tensor, mask
 
     # ------------------------------------------------------------ #
     # Tensor stacking
     # ------------------------------------------------------------ #
 
-    def _stack_tensor(self, poses):
-        valid = [p for p in poses if p is not None]
-        if not valid:
+    def _stack_tensor(self, normalized_poses):
+        """
+        Stacks a list of normalized poses into a single tensor.
+
+        This method converts a list of pose arrays (one for each frame) into a
+        single numpy tensor, creating a mask to indicate which frames contain
+        valid pose data.
+
+        Args:
+            normalized_poses (list): A list of normalized pose arrays. Each element
+                                     can be a numpy array or None if no pose was
+                                     detected in that frame.
+
+        Returns:
+            A tuple containing:
+            - pose_tensor (numpy.ndarray): A (T, J, 3) tensor, where T is the
+              number of frames and J is the number of joints.
+            - mask (numpy.ndarray): A boolean array of shape (T,) indicating
+              valid frames.
+        """
+        valid_poses = [pose for pose in normalized_poses if pose is not None]
+        if not valid_poses:
             return np.array([]), np.array([])
             
-        T = len(poses)
-        J = valid[0].shape[0]
+        num_frames = len(normalized_poses)
+        num_joints = valid_poses[0].shape[0]
 
-        tensor = np.zeros((T, J, 3))
-        mask = np.zeros(T, dtype=bool)
+        pose_tensor = np.zeros((num_frames, num_joints, 3))
+        mask = np.zeros(num_frames, dtype=bool)
 
-        for t, p in enumerate(poses):
-            if p is None:
+        for frame_index, pose in enumerate(normalized_poses):
+            if pose is None:
                 continue
-            tensor[t] = p
-            mask[t] = True
+            pose_tensor[frame_index] = pose
+            mask[frame_index] = True
 
-        return tensor, mask
+        return pose_tensor, mask
 
     def process_video_cosine_segments(self, input_video_path):
         """
-        Processes a video to create a rich feature tensor based on cosine similarities.
+        Processes a video to create a feature tensor based on cosine similarities.
 
-        For each body segment, it calculates a feature vector of size 3:
-        1. Similarity to the global torso vector.
-        2. Similarity to the local parent segment (capturing joint angles).
-        3. Similarity to a gravity-aligned "up" vector.
+        This method extends the basic video processing by calculating a set of
+        features for each body segment based on its orientation relative to the
+        torso, its parent segment, and gravity.
+
+        Args:
+            input_video_path (str): The path to the input video file.
 
         Returns:
-            feature_tensor: (T, num_segments, 3)
-            mask          : (T,)
+            A tuple containing:
+            - frames (list): The same list of frame data returned by `process_video`.
+            - feature_tensor (numpy.ndarray): A (T, num_segments, 3) tensor
+              of cosine similarity features.
+            - mask (numpy.ndarray): A boolean array of shape (T,) indicating
+              valid frames.
         """
-        frames, tensor_3d, mask = self.process_video(input_video_path)
-        if tensor_3d.shape[0] == 0:
-             return np.array([]), np.array([])
+        frames, pose_tensor, mask = self.process_video(input_video_path)
+        if pose_tensor.shape[0] == 0:
+             return frames, np.array([]), np.array([])
 
-        # Segments are defined by the indices of the joints in the `pose_3d` tensor.
         body_segments = [
             (1, 3),   # 0: L Upper Arm (shoulder to elbow)
             (3, 5),   # 1: L Forearm (elbow to wrist)
@@ -190,8 +240,6 @@ class MediapipeSegmentationRepository:
             (7, 8)    # 9: Hip Line
         ]
 
-        # Maps a child segment to its parent to calculate joint angles.
-        # E.g., The parent of the Left Forearm (1) is the Left Upper Arm (0).
         parent_segment_map = {
             1: 0,  # L Forearm -> L Upper Arm
             3: 2,  # R Forearm -> R Upper Arm
@@ -199,23 +247,21 @@ class MediapipeSegmentationRepository:
             7: 6   # R Shin -> R Thigh
         }
 
-        num_frames = tensor_3d.shape[0]
+        num_frames = pose_tensor.shape[0]
         num_segments = len(body_segments)
         num_features = 3  # Torso, Parent, Gravity
         
         feature_tensor = np.zeros((num_frames, num_segments, num_features))
 
-        for t in range(num_frames):
-            if not mask[t]:
+        for frame_index in range(num_frames):
+            if not mask[frame_index]:
                 continue
 
-            pose_at_frame_t = tensor_3d[t]
-            # 1. Torso Vector (Global Reference)
-            hip_midpoint = (pose_at_frame_t[7] + pose_at_frame_t[8]) / 2
-            shoulder_midpoint = (pose_at_frame_t[1] + pose_at_frame_t[2]) / 2
+            pose_at_frame = pose_tensor[frame_index]
+            hip_midpoint = (pose_at_frame[7] + pose_at_frame[8]) / 2
+            shoulder_midpoint = (pose_at_frame[1] + pose_at_frame[2]) / 2
             torso_vector = shoulder_midpoint - hip_midpoint
 
-            # 2. Gravity Vector (Person-centric "Up")
             gravity_vector = torso_vector.copy()
             if gravity_vector[1] > 0:
                 gravity_vector = -gravity_vector
@@ -229,33 +275,28 @@ class MediapipeSegmentationRepository:
             normalized_torso_vector = torso_vector / torso_norm
             normalized_gravity_vector = gravity_vector / gravity_norm
             
-            # --- Pre-calculate all segment vectors for the frame ---
             segment_vectors = {}
             for i, (start_joint, end_joint) in enumerate(body_segments):
-                vector = pose_at_frame_t[end_joint] - pose_at_frame_t[start_joint]
+                vector = pose_at_frame[end_joint] - pose_at_frame[start_joint]
                 norm = np.linalg.norm(vector)
                 segment_vectors[i] = vector / norm if norm > 0 else np.zeros(3)
 
-            # --- Calculate Feature Vector for Each Segment ---
-            for i in range(num_segments):
-                segment_vector = segment_vectors[i]
+            for segment_index in range(num_segments):
+                segment_vector = segment_vectors[segment_index]
                 if np.all(segment_vector == 0):
                     continue
 
-                # Feature 1: Similarity to Torso
-                sim_to_torso = np.dot(segment_vector, normalized_torso_vector)
+                similarity_to_torso = np.dot(segment_vector, normalized_torso_vector)
 
-                # Feature 2: Similarity to Parent (Joint Angle)
-                parent_index = parent_segment_map.get(i)
-                sim_to_parent = 0.0 # Default if no parent
+                parent_index = parent_segment_map.get(segment_index)
+                similarity_to_parent = 0.0
                 if parent_index is not None:
                     parent_vector = segment_vectors.get(parent_index)
                     if parent_vector is not None and not np.all(parent_vector == 0):
-                        sim_to_parent = np.dot(segment_vector, parent_vector)
+                        similarity_to_parent = np.dot(segment_vector, parent_vector)
 
-                # Feature 3: Similarity to Gravity
-                sim_to_gravity = np.dot(segment_vector, normalized_gravity_vector)
+                similarity_to_gravity = np.dot(segment_vector, normalized_gravity_vector)
 
-                feature_tensor[t, i] = [sim_to_torso, sim_to_parent, sim_to_gravity]
+                feature_tensor[frame_index, segment_index] = [similarity_to_torso, similarity_to_parent, similarity_to_gravity]
 
-        return feature_tensor, mask
+        return frames, feature_tensor, mask
