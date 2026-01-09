@@ -221,8 +221,8 @@
                     3
                 ],
                 "feature_mask": [
-                    true,
-                    true,
+                    false,
+                    false,
                     true
                 ]
             }
@@ -341,8 +341,8 @@
                     8
                 ],
                 "feature_mask": [
-                    true,
-                    true,
+                    false,
+                    false,
                     true
                 ]
             }

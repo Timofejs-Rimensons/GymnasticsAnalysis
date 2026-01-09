@@ -43,9 +43,10 @@ class ProcessingPipelineService:
         total_scores = {}
         for frame_scores in pose_scores_per_frame:
             for pose_name, data in frame_scores.items():
-                if pose_name not in total_scores:
-                    total_scores[pose_name] = 0
-                total_scores[pose_name] += data['score']
+                if isinstance(data, dict):
+                    if pose_name not in total_scores:
+                        total_scores[pose_name] = 0
+                    total_scores[pose_name] += data.get('score', 0)
 
         score_sum = sum(total_scores.values())
         if score_sum > 0:
@@ -55,13 +56,16 @@ class ProcessingPipelineService:
 
         with open(output_json_path, 'w') as json_file:
             json.dump(normalized_total_scores, json_file, indent=4)
-            
+
         pose_labels = []
         for frame_scores in pose_scores_per_frame:
-            label = ""
+            phase = frame_scores.get("phase", "unknown")
+            label = f"Phase: {phase}\n"
             for pose_name, data in frame_scores.items():
+                if pose_name == "phase":
+                    continue
                 label += f"{pose_name}: {data['score']:.2f}"
-                if data['sub_scores']:
+                if data.get('sub_scores'):
                     label += " | "
                     label += " | ".join([f"{sub_pose}: {sub_score:.2f}" for sub_pose, sub_score in data['sub_scores'].items()])
                 label += "\n"

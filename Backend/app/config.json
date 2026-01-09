@@ -1,6 +1,6 @@
 {
     "model_in_use": "./analytical_models/analytical0.json",
     "exercises": {
-        "handstand": ["starting", "swing", "stand", "swing", "starting"]
+        "handstand": ["starting", "swing", "landing"]
     }
 }

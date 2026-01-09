@@ -221,7 +221,14 @@ class PoseScoringService:
                         "score": score,
                         "sub_scores": {}
                     }
-
+            
+            # Determine phase by max score
+            if frame_scores_structured:
+                top_pose = max(frame_scores_structured, key=lambda p: frame_scores_structured[p]['score'])
+                frame_scores_structured['phase'] = top_pose
+            else:
+                frame_scores_structured['phase'] = "no_pose"
+            
             all_frame_scores.append(frame_scores_structured)
 
         return all_frame_scores, frames
