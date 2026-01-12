@@ -140,24 +140,46 @@ class PoseScoringService:
         
         print(f"  - Successfully saved model for '{pose_name}' to '{self.reference_json_path}'.")
 
+    def _calculate_pose_scores(self, current_frame_features, reference_data):
+        all_pose_scores = {}
+        for pose_name, pose_data in reference_data.items():
+            if "mean" in pose_data:
+                config = pose_data["config"]
+                segment_mask = config.get("segment_mask", list(range(len(pose_data["mean"]))))
+                feature_mask = config.get("feature_mask", [True, True, True])
+                score = self._calculate_similarity_score(
+                    current_frame_features,
+                    pose_data["mean"],
+                    pose_data["std"],
+                    segment_mask,
+                    feature_mask
+                )
+                all_pose_scores[pose_name] = score
+
+        frame_scores_structured = {}
+        for pose_name, pose_data in reference_data.items():
+            if pose_data["config"].get("is_sub_pose", False):
+                continue
+
+            config = pose_data["config"]
+            if "sub_poses" in config:
+                sub_pose_names = config.get("sub_poses", [])
+                sub_scores = {name: all_pose_scores.get(name, 0.0) for name in sub_pose_names}
+                aggregated_score = np.mean(list(sub_scores.values())) if sub_scores else 0.0
+                frame_scores_structured[pose_name] = {
+                    "score": aggregated_score,
+                    "sub_scores": sub_scores
+                }
+            else:
+                score = all_pose_scores.get(pose_name, 0.0)
+                frame_scores_structured[pose_name] = {
+                    "score": score,
+                    "sub_scores": {}
+                }
+        
+        return frame_scores_structured
+
     def get_poses_from_video(self, input_video_path, exercise_name):
-        """
-        Analyzes a video and scores each frame against all poses of a given exercise.
-
-        This method processes a video, calculates similarity scores for each frame
-        against pre-fitted pose models, and returns a structured list of these scores.
-
-        Args:
-            input_video_path (str): The path to the video to be analyzed.
-            exercise_name (str): The name of the exercise to score against.
-
-        Returns:
-            A tuple containing:
-            - all_frame_scores (list): A list of dictionaries, where each
-              dictionary contains the scores for all poses in a single frame.
-            - frames (list): A list of frame data dictionaries from the
-              segmentation repository.
-        """
         if not os.path.exists(self.reference_json_path):
             with open(self.reference_json_path, 'w', encoding='utf-8') as f:
                 json.dump({}, f, indent=4)
@@ -172,63 +194,17 @@ class PoseScoringService:
         all_frame_scores = []
         for frame_index, current_frame_features in enumerate(feature_tensor):
             if not mask[frame_index]:
-                all_frame_scores.append({}) # Append empty dict for non-detected frames
+                all_frame_scores.append({})
                 continue
 
-            all_pose_scores = {}
-
-            # 1. Calculate scores for all fundamental poses first.
-            for pose_name, pose_data in reference_data.items():
-                if "mean" in pose_data:  # Identifies it as a fundamental pose
-                    config = pose_data["config"]
-                    
-                    segment_mask = config.get("segment_mask", list(range(len(pose_data["mean"]))))
-                    feature_mask = config.get("feature_mask", [True, True, True])
-
-                    score = self._calculate_similarity_score(
-                        current_frame_features,
-                        pose_data["mean"],
-                        pose_data["std"],
-                        segment_mask,
-                        feature_mask
-                    )
-                    all_pose_scores[pose_name] = score
+            frame_scores = self._calculate_pose_scores(current_frame_features, reference_data)
             
-            frame_scores_structured = {}
-
-            # 2. Structure the output with top-level poses and their sub-scores.
-            for pose_name, pose_data in reference_data.items():
-                if pose_data["config"].get("is_sub_pose", False):
-                    continue
-
-                config = pose_data["config"]
-                
-                if "sub_poses" in config:
-                    sub_pose_names = config.get("sub_poses", [])
-                    sub_scores = {name: all_pose_scores.get(name, 0.0) for name in sub_pose_names}
-                    
-                    aggregated_score = 0.0
-                    if sub_scores:
-                        aggregated_score = np.mean(list(sub_scores.values()))
-
-                    frame_scores_structured[pose_name] = {
-                        "score": aggregated_score,
-                        "sub_scores": sub_scores
-                    }
-                else:
-                    score = all_pose_scores.get(pose_name, 0.0)
-                    frame_scores_structured[pose_name] = {
-                        "score": score,
-                        "sub_scores": {}
-                    }
-            
-            # Determine phase by max score
-            if frame_scores_structured:
-                top_pose = max(frame_scores_structured, key=lambda p: frame_scores_structured[p]['score'])
-                frame_scores_structured['phase'] = top_pose
+            if frame_scores:
+                top_pose = max(frame_scores, key=lambda p: frame_scores[p]['score'])
+                frame_scores['phase'] = top_pose
             else:
-                frame_scores_structured['phase'] = "no_pose"
+                frame_scores['phase'] = "no_pose"
             
-            all_frame_scores.append(frame_scores_structured)
+            all_frame_scores.append(frame_scores)
 
         return all_frame_scores, frames

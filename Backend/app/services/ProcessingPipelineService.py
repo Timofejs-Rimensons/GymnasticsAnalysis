@@ -1,5 +1,6 @@
 import json
 import os
+import numpy as np
 from repositories.MediapipeSegmentationRepository import MediapipeSegmentationRepository
 from services.PoseScoringService import PoseScoringService
 from services.VisualisationService import save_visualized_video
@@ -7,17 +8,10 @@ from services.VisualisationService import save_visualized_video
 class ProcessingPipelineService:
     
     def __init__(self):
-        """
-        Initializes the ProcessingPipelineService.
-
-        This service orchestrates the video analysis pipeline by initializing the
-        necessary services for pose scoring and visualization.
-        """
         self.segmentation_repository = MediapipeSegmentationRepository()
         self.pose_scoring_service = PoseScoringService()
 
     def _update_status(self, status_json_path: str, status: str, progress: float):
-        """Safely updates the status JSON file, preserving existing content."""
         try:
             with open(status_json_path, 'r+') as f:
                 try:
@@ -34,24 +28,72 @@ class ProcessingPipelineService:
         except FileNotFoundError:
             with open(status_json_path, 'w') as f:
                 json.dump({'status': status, 'progress': progress}, f)
+
+    def _structure_and_save_results(self, pose_scores_per_frame, output_json_path):
+        all_poses = {}
+        for frame_scores in pose_scores_per_frame:
+            for pose_name, data in frame_scores.items():
+                if pose_name == 'phase':
+                    continue
+                if 'sub_scores' in data and data['sub_scores']:
+                    for sub_pose, sub_score in data['sub_scores'].items():
+                        if sub_pose not in all_poses:
+                            all_poses[sub_pose] = []
+                        all_poses[sub_pose].append(sub_score)
+                else:
+                    if pose_name not in all_poses:
+                        all_poses[pose_name] = []
+                    all_poses[pose_name].append(data.get('score', 0))
+
         
+        pose_scores = {pose: np.mean(scores) for pose, scores in all_poses.items()}
+        
+        scores = list(pose_scores.values())
+        if not scores:
+            overall_score_raw = 0
+            mean_score = 0
+            std_dev = 0
+            max_raw_score = 1
+        else:
+            overall_score_raw = sum(scores)
+            mean_score = np.mean(scores)
+            std_dev = np.std(scores)
+            max_raw_score = len(pose_scores)
+
+        target_max_score = 100.0
+        
+        overall_score = (overall_score_raw / max_raw_score) * target_max_score if max_raw_score > 0 else 0
+        percentage = overall_score 
+
+        pose_categories = []
+        for pose, score in pose_scores.items():
+            is_maxed = score >= mean_score - std_dev
+            improvement_needed = not is_maxed
+            
+            pose_categories.append({
+                "name": pose,
+                "score": int(score * 100),
+                "max_score": 100,
+                "description": "Placeholder description.",
+                "improvement_needed": improvement_needed
+            })
+
+        results = {
+            "overall_score": int(overall_score),
+            "max_score": target_max_score,
+            "percentage": percentage,
+            "categories": [
+                {
+                    "name": "Poses",
+                    "poses": pose_categories
+                }
+            ]
+        }
+
+        with open(output_json_path, 'w') as json_file:
+            json.dump(results, json_file, indent=4)
+
     def analyze_video(self: str, input_video_path: str, output_video_path: str, output_pdf_path: str, output_json_path: str, exercise_name: str, status_json_path: str):
-        """
-        Analyzes a video, generates pose scores, and creates visualization files.
-
-        This method coordinates the entire analysis pipeline, including pose
-        estimation, scoring, and the generation of output files such as a
-        visualization video, a JSON file with scores, and a placeholder PDF.
-
-        Args:
-            input_video_path (str): Path to the input video file.
-            output_video_path (str): Path to save the output video visualization.
-            output_pdf_path (str): Path to save the output PDF report.
-            output_json_path (str): Path to save the JSON file with pose scores.
-            exercise_name (str): The name of the exercise being analyzed.
-        """
-        
-        
         pose_scores_per_frame, frames = self.pose_scoring_service.get_poses_from_video(input_video_path, exercise_name)
         
         if not pose_scores_per_frame:
@@ -62,22 +104,7 @@ class ProcessingPipelineService:
             self._update_status(status_json_path, "completed", 1)
             return
         
-        total_scores = {}
-        for frame_scores in pose_scores_per_frame:
-            for pose_name, data in frame_scores.items():
-                if isinstance(data, dict):
-                    if pose_name not in total_scores:
-                        total_scores[pose_name] = 0
-                    total_scores[pose_name] += data.get('score', 0)
-
-        score_sum = sum(total_scores.values())
-        if score_sum > 0:
-            normalized_total_scores = {k: v / score_sum for k, v in total_scores.items()}
-        else:
-            normalized_total_scores = total_scores
-
-        with open(output_json_path, 'w') as json_file:
-            json.dump(normalized_total_scores, json_file, indent=4)
+        self._structure_and_save_results(pose_scores_per_frame, output_json_path)
 
         pose_labels = []
         for frame_scores in pose_scores_per_frame:
@@ -113,4 +140,3 @@ class ProcessingPipelineService:
             pass
         
         self._update_status(status_json_path, "completed", 1)
-        

@@ -7,6 +7,17 @@ os.environ['GLOG_minloglevel'] = '2'
 
 app = FastAPI(title="GymnasticsAPI")
 
+from fastapi.middleware.cors import CORSMiddleware
+
+#TODO: Restrict origins for production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
 # Mount the router for API endpoints
 app.include_router(router, prefix="/api", tags=["upload"])
 
