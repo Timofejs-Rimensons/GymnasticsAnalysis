@@ -1,111 +1,142 @@
 import { useState, useRef } from "react";
-import { Upload, Download, Video, Sun, Moon, HelpCircle, Star, User, ArrowLeft } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
+import { Upload, Download, Video, Sun, Moon, HelpCircle, Hand, ArrowLeft, CheckCircle, XCircle, Loader, ChevronDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./components/ui/dialog";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
-import { ApiService, AnalysisResult, CategoryScore } from "./services/api";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { ApiService, StatusResponse, AnalysisResult } from "./services/api";
+
+interface VideoUpload {
+  id: string;
+  file: File;
+  uploadedUrl: string; // Local blob URL for preview
+  status: StatusResponse;
+  analysisResults?: AnalysisResult;
+}
 
 export default function App() {
-  const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isProcessed, setIsProcessed] = useState(false);
-  const [exportFormat, setExportFormat] = useState("mp4");
-  const [reportFormat, setReportFormat] = useState("pdf");
+  const [videos, setVideos] = useState<VideoUpload[]>([]);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [showInstructions, setShowInstructions] = useState(false);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [showVideoDropdown, setShowVideoDropdown] = useState(false);
-  const [showReportDropdown, setShowReportDropdown] = useState(false);
-  const [videoId, setVideoId] = useState<string | null>(null);
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [showVideoSelector, setShowVideoSelector] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Use API results if available, otherwise use mock data
-  const resultsData = analysisResult
-    ? analysisResult.categories
-    : [
-        { name: "Starting position", score: 15, maxScore: 20 },
-        { name: "Swing-up", score: 16, maxScore: 20 },
-        { name: "Hand placement", score: 18, maxScore: 20 },
-        { name: "Body posture during handstand", score: 14, maxScore: 20 },
-        { name: "Landing & finishing", score: 17, maxScore: 20 },
-      ];
-
-  // Calculate total room for improvement
-  const totalRoomForImprovement = resultsData.reduce(
-    (sum, item) => sum + (item.maxScore - item.score), 
-    0
-  );
-
-  // Prepare data for pie chart - individual scores + combined remaining
-  const chartData = [
-    ...resultsData.map(item => ({
-      name: item.name,
-      value: item.score,
-      type: 'achieved',
-      fullName: `${item.name}: ${item.score}/${item.maxScore}`
-    })),
-    {
-      name: "Room for improvement",
-      value: totalRoomForImprovement,
-      type: 'remaining',
-      fullName: `Room for improvement: ${totalRoomForImprovement} points`
-    }
-  ];
-
-  // Colors for each category in the pie chart
-  const categoryColors = theme === "dark" 
-    ? ["#a78bfa", "#818cf8", "#60a5fa", "#34d399", "#fbbf24"]
-    : ["#7c3aed", "#4f46e5", "#2563eb", "#059669", "#d97706"];
   
-  const remainingColor = theme === "dark" ? "#374151" : "#d1d5db";
+  const selectedVideo = videos.find(v => v.id === selectedVideoId);
+  const resultsData = selectedVideo?.analysisResults;
 
-  // Map colors to chart data
-  const getColor = (index: number) => {
-    if (index < categoryColors.length) {
-      return categoryColors[index];
-    }
-    return remainingColor; // Last segment is room for improvement
-  };
+  // Pie chart colors
+  const categoryColors = theme === "dark"
+    ? ["#a78bfa", "#818cf8", "#60a5fa", "#34d399", "#fbbf24", "#f472b6", "#fb923c"]
+    : ["#7c3aed", "#4f46e5", "#2563eb", "#059669", "#d97706", "#db2777", "#ea580c"];
+
+  // Prepare chart data from backend categories
+  const chartData = resultsData?.categories
+    ? resultsData.categories.map((category, index) => ({
+        name: `Category ${index + 1}`,
+        value: 1, // Equal size for visualization
+        categoryData: category, // Store full category data for tooltip
+        color: categoryColors[index % categoryColors.length]
+      }))
+    : [];
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
 
-  const handleOptionSelect = (option: number) => {
+  const handleOptionSelect = (option: string) => {
     setSelectedOption(option);
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Check file extension instead of MIME type (more reliable for .mov files)
-      const validExtensions = ['.mp4', '.mov', '.avi', '.webm', '.mkv'];
-      const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
+  /**
+   * Poll status and fetch results when completed
+   */
+  const pollVideoStatus = async (videoId: string) => {
+    try {
+      const status = await ApiService.pollUntilComplete(videoId, 2000);
 
-      if (validExtensions.includes(fileExt) || file.type.startsWith("video/")) {
-        setVideoFile(file);
-        setIsProcessed(false);
-        setError(null);
-        setVideoUrl(URL.createObjectURL(file));
+      // Update status to completed
+      setVideos(prev => prev.map(v =>
+        v.id === videoId ? { ...v, status } : v
+      ));
 
-        // Upload video immediately
+      // Fetch analysis results from backend
+      if (status.status === "completed") {
         try {
-          const response = await ApiService.uploadVideo(file);
-          setVideoId(response.video_id);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Upload failed");
-          console.error("Upload error:", err);
+          const analysisResults = await ApiService.getResponseJson(videoId);
+          setVideos(prev => prev.map(v =>
+            v.id === videoId ? { ...v, analysisResults } : v
+          ));
+        } catch (error) {
+          console.error("Error fetching analysis results:", error);
         }
-      } else {
-        setError("Please upload a valid video file (MP4, MOV, AVI, WebM, MKV)");
+      }
+    } catch (error) {
+      console.error("Error polling status for video:", videoId, error);
+      // On error, mark as failed
+      setVideos(prev => prev.map(v =>
+        v.id === videoId ? {
+          ...v,
+          status: {
+            status: "failed",
+            progress: 0,
+            error_message: error instanceof Error ? error.message : "Failed to process video"
+          }
+        } : v
+      ));
+    }
+  };
+
+  /**
+   * Handle file selection from input
+   */
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file && file.type.startsWith("video/")) {
+        try {
+          // Step 1: Upload video and get process ID
+          const uploadResponse = await ApiService.uploadVideo(file);
+          const videoId = uploadResponse.pid;
+
+          const newVideo: VideoUpload = {
+            id: videoId,
+            file: file,
+            uploadedUrl: URL.createObjectURL(file),
+            status: {
+              status: "pending",
+              progress: 0,
+            }
+          };
+
+          setVideos(prev => {
+            const updated = [...prev, newVideo];
+            // Set as selected if it's the first video
+            if (prev.length === 0) {
+              setSelectedVideoId(videoId);
+            }
+            return updated;
+          });
+
+          // Step 2: Start processing with selected exercise type
+          await ApiService.startProcessing(videoId, selectedOption || "handstand");
+
+          // Step 3: Start polling for status
+          pollVideoStatus(videoId);
+        } catch (error) {
+          console.error("Error uploading video:", error);
+          alert(error instanceof Error ? error.message : "Failed to upload video");
+        }
       }
     }
   };
 
+  /**
+   * Handle drag and drop events
+   */
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(true);
@@ -119,28 +150,45 @@ export default function App() {
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      // Check file extension instead of MIME type (more reliable for .mov files)
-      const validExtensions = ['.mp4', '.mov', '.avi', '.webm', '.mkv'];
-      const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
 
-      if (validExtensions.includes(fileExt) || file.type.startsWith("video/")) {
-        setVideoFile(file);
-        setIsProcessed(false);
-        setError(null);
-        setVideoUrl(URL.createObjectURL(file));
+    const files = e.dataTransfer.files;
+    if (!files) return;
 
-        // Upload video immediately
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file && file.type.startsWith("video/")) {
         try {
-          const response = await ApiService.uploadVideo(file);
-          setVideoId(response.video_id);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Upload failed");
-          console.error("Upload error:", err);
+          // Step 1: Upload video and get process ID
+          const uploadResponse = await ApiService.uploadVideo(file);
+          const videoId = uploadResponse.pid;
+
+          const newVideo: VideoUpload = {
+            id: videoId,
+            file: file,
+            uploadedUrl: URL.createObjectURL(file),
+            status: {
+              status: "pending",
+              progress: 0,
+            }
+          };
+
+          setVideos(prev => {
+            const updated = [...prev, newVideo];
+            if (prev.length === 0) {
+              setSelectedVideoId(videoId);
+            }
+            return updated;
+          });
+
+          // Step 2: Start processing with selected exercise type
+          await ApiService.startProcessing(videoId, selectedOption || "handstand");
+
+          // Step 3: Start polling for status
+          pollVideoStatus(videoId);
+        } catch (error) {
+          console.error("Error uploading video:", error);
+          alert(error instanceof Error ? error.message : "Failed to upload video");
         }
-      } else {
-        setError("Please upload a valid video file (MP4, MOV, AVI, WebM, MKV)");
       }
     }
   };
@@ -149,53 +197,82 @@ export default function App() {
     fileInputRef.current?.click();
   };
 
-  const handleProcess = async () => {
-    if (!videoFile || !videoId || !selectedOption) return;
+  /**
+   * Download processed video from backend
+   */
+  const handleSaveVideo = () => {
+    if (!selectedVideoId) return;
 
-    setIsProcessing(true);
-    setError(null);
+    const downloadUrl = ApiService.getDownloadUrl(selectedVideoId);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `processed_${selectedVideo?.file.name || "video"}.mp4`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-    try {
-      // Process video with selected option
-      const result = await ApiService.processVideo(videoId, selectedOption);
-      setAnalysisResult(result);
+  /**
+   * Download report from backend
+   */
+  const handleSaveReport = (format: "pdf" | "json") => {
+    if (!selectedVideoId) return;
 
-      // Get processed video URL
-      const processedUrl = await ApiService.getProcessedVideo(videoId);
-      setVideoUrl(processedUrl);
-
-      setIsProcessed(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Processing failed");
-      console.error("Processing error:", err);
-    } finally {
-      setIsProcessing(false);
+    if (format === "pdf") {
+      const pdfUrl = ApiService.getReportPdfUrl(selectedVideoId);
+      const link = document.createElement("a");
+      link.href = pdfUrl;
+      link.download = `report_${selectedVideoId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else if (format === "json") {
+      // JSON is already fetched, download it as a file
+      if (resultsData) {
+        const dataStr = JSON.stringify(resultsData, null, 2);
+        const dataBlob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `report_${selectedVideoId}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
     }
   };
 
-  const handleSave = async (format: string) => {
-    if (!videoId) return;
-
-    try {
-      const response = await ApiService.exportVideo(videoId, format);
-      ApiService.downloadFile(response.download_url, response.filename);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed");
-      console.error("Export error:", err);
+  /**
+   * UI Helper Functions
+   */
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "completed":
+        return theme === "dark" ? "text-green-400" : "text-green-600";
+      case "failed":
+        return theme === "dark" ? "text-red-400" : "text-red-600";
+      case "processing":
+        return theme === "dark" ? "text-blue-400" : "text-blue-600";
+      default:
+        return theme === "dark" ? "text-gray-400" : "text-gray-600";
     }
   };
 
-  const handleSaveReport = async (format: string) => {
-    if (!videoId) return;
-
-    try {
-      const response = await ApiService.exportReport(videoId, format);
-      ApiService.downloadFile(response.download_url, response.filename);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Report generation failed");
-      console.error("Report error:", err);
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "completed":
+        return <CheckCircle className="w-5 h-5" />;
+      case "failed":
+        return <XCircle className="w-5 h-5" />;
+      case "processing":
+        return <Loader className="w-5 h-5 animate-spin" />;
+      default:
+        return <Loader className="w-5 h-5" />;
     }
   };
+
+  const hasCompletedVideos = videos.some(v => v.status.status === "completed");
 
   return (
     <div className={`min-h-screen relative overflow-hidden font-['Inter',sans-serif] transition-colors duration-500 ${
@@ -234,7 +311,7 @@ export default function App() {
 
       {/* Main Content */}
       <div className="relative z-10 container mx-auto px-6 py-16 max-w-4xl">
-        {/* Option Selection Screen - Shows first */}
+        {/* Option Selection Screen */}
         {selectedOption === null ? (
           <>
             {/* Header */}
@@ -279,9 +356,9 @@ export default function App() {
 
             {/* Option Tiles */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
-              {/* Option 1 */}
+              {/* Handstand Option */}
               <button
-                onClick={() => handleOptionSelect(1)}
+                onClick={() => handleOptionSelect("handstand")}
                 className={`
                   group relative
                   backdrop-blur-2xl
@@ -295,7 +372,6 @@ export default function App() {
                   }
                 `}
               >
-                {/* Icon Container */}
                 <div className="flex justify-center mb-8">
                   <div className={`
                     p-6 rounded-2xl border-2 transition-all duration-300
@@ -304,20 +380,18 @@ export default function App() {
                       : "bg-white/60 border-blue-200/40 group-hover:bg-blue-500/20 group-hover:border-blue-500/40"
                     }
                   `}>
-                    <Star className={`w-12 h-12 ${
+                    <Hand className={`w-12 h-12 ${
                       theme === "dark" ? "text-white/70 group-hover:text-purple-300" : "text-blue-500 group-hover:text-blue-600"
                     }`} strokeWidth={1.5} />
                   </div>
                 </div>
                 
-                {/* Title */}
                 <p className={`text-xl font-medium ${
                   theme === "dark" ? "text-white" : "text-gray-900"
                 }`}>
-                  Option 1
+                  Handstand
                 </p>
                 
-                {/* Hover Glow */}
                 <div className={`absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none ${
                   theme === "dark"
                     ? "bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/10"
@@ -325,9 +399,9 @@ export default function App() {
                 }`}></div>
               </button>
 
-              {/* Option 2 */}
+              {/* Straddle Jump Option */}
               <button
-                onClick={() => handleOptionSelect(2)}
+                onClick={() => handleOptionSelect("straddle_jump")}
                 className={`
                   group relative
                   backdrop-blur-2xl
@@ -341,7 +415,6 @@ export default function App() {
                   }
                 `}
               >
-                {/* Icon Container */}
                 <div className="flex justify-center mb-8">
                   <div className={`
                     p-6 rounded-2xl border-2 transition-all duration-300
@@ -350,20 +423,20 @@ export default function App() {
                       : "bg-white/60 border-blue-200/40 group-hover:bg-blue-500/20 group-hover:border-blue-500/40"
                     }
                   `}>
-                    <User className={`w-12 h-12 ${
+                    <svg className={`w-12 h-12 ${
                       theme === "dark" ? "text-white/70 group-hover:text-purple-300" : "text-blue-500 group-hover:text-blue-600"
-                    }`} strokeWidth={1.5} />
+                    }`} strokeWidth={1.5} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 15.3m14.8 0l-.94 3.013c-.07.22-.263.348-.49.348h-2.25a.75.75 0 01-.75-.75V17.5m-7.5 0v.563a.75.75 0 01-.75.75H5.12c-.227 0-.42-.128-.49-.348L3.7 15.3" />
+                    </svg>
                   </div>
                 </div>
                 
-                {/* Title */}
                 <p className={`text-xl font-medium ${
                   theme === "dark" ? "text-white" : "text-gray-900"
                 }`}>
-                  Option 2
+                  Straddle Jump
                 </p>
                 
-                {/* Hover Glow */}
                 <div className={`absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none ${
                   theme === "dark"
                     ? "bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/10"
@@ -385,9 +458,8 @@ export default function App() {
             <button
               onClick={() => {
                 setSelectedOption(null);
-                setVideoFile(null);
-                setIsProcessed(false);
-                setVideoUrl(null);
+                setVideos([]);
+                setSelectedVideoId(null);
               }}
               className={`
                 fixed top-8 left-8 z-50
@@ -406,7 +478,7 @@ export default function App() {
               <span className="font-medium">Back</span>
             </button>
 
-            {/* Upload Interface - Shows after option selection */}
+            {/* Upload Interface */}
             <div className="text-center mb-16">
               <div className="flex items-center justify-center gap-3 mb-4">
                 <div className={`p-3 rounded-2xl backdrop-blur-xl border shadow-2xl ${
@@ -420,10 +492,10 @@ export default function App() {
               <h1 className={`text-5xl font-semibold mb-3 tracking-tight ${
                 theme === "dark" ? "text-white" : "text-gray-900"
               }`}>
-                Video Processor
+                {selectedOption === "handstand" ? "Handstand" : "Straddle Jump"} Analysis
               </h1>
               <p className={`text-lg mb-5 ${theme === "dark" ? "text-white/60" : "text-gray-600"}`}>
-                Transform your videos with cutting-edge processing
+                Upload your videos for AI-powered analysis
               </p>
               
               {/* How to Use Button */}
@@ -452,6 +524,7 @@ export default function App() {
                 ref={fileInputRef}
                 type="file"
                 accept="video/*"
+                multiple
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -467,12 +540,11 @@ export default function App() {
                   p-16 transition-all duration-300
                   shadow-[0_8px_32px_0_rgba(0,0,0,0.37)]
                   ${theme === "dark" 
-                    ? `bg-white/5 hover:bg-white/10 ${isDragging ? 'border-purple-400/60 bg-white/15 scale-[1.02]' : 'border-white/20'} ${videoFile ? 'border-purple-400/40 bg-purple-500/10' : ''} hover:border-white/30`
-                    : `bg-blue-50/50 hover:bg-blue-50/80 ${isDragging ? 'border-blue-400/60 bg-blue-100/70 scale-[1.02]' : 'border-blue-300/40'} ${videoFile ? 'border-blue-500/60 bg-blue-100/60' : ''} hover:border-blue-400/60`
+                    ? `bg-white/5 hover:bg-white/10 ${isDragging ? 'border-purple-400/60 bg-white/15 scale-[1.02]' : 'border-white/20'} ${videos.length > 0 ? 'border-purple-400/40 bg-purple-500/10' : ''} hover:border-white/30`
+                    : `bg-blue-50/50 hover:bg-blue-50/80 ${isDragging ? 'border-blue-400/60 bg-blue-100/70 scale-[1.02]' : 'border-blue-300/40'} ${videos.length > 0 ? 'border-blue-500/60 bg-blue-100/60' : ''} hover:border-blue-400/60`
                   }
                 `}
               >
-                {/* Subtle glow effect */}
                 <div className={`absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${
                   theme === "dark"
                     ? "bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/10"
@@ -483,40 +555,40 @@ export default function App() {
                   <div className={`
                     mb-6 p-6 rounded-2xl transition-all duration-300
                     ${theme === "dark"
-                      ? videoFile 
+                      ? videos.length > 0
                         ? 'bg-purple-500/20 border-2 border-purple-400/40' 
                         : 'bg-white/10 border-2 border-white/20'
-                      : videoFile
+                      : videos.length > 0
                         ? 'bg-blue-500/20 border-2 border-blue-500/40'
                         : 'bg-blue-500/10 border-2 border-blue-300/30'
                     }
                   `}>
                     <Upload className={`w-12 h-12 transition-colors duration-300 ${
                       theme === "dark"
-                        ? videoFile ? 'text-purple-300' : 'text-white/70'
-                        : videoFile ? 'text-blue-600' : 'text-blue-500'
+                        ? videos.length > 0 ? 'text-purple-300' : 'text-white/70'
+                        : videos.length > 0 ? 'text-blue-600' : 'text-blue-500'
                     }`} />
                   </div>
                   
-                  {videoFile ? (
+                  {videos.length > 0 ? (
                     <div>
                       <p className={`text-xl mb-2 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
-                        {videoFile.name}
+                        {videos.length} video{videos.length > 1 ? 's' : ''} uploaded
                       </p>
                       <p className={`text-sm ${theme === "dark" ? "text-white/50" : "text-gray-500"}`}>
-                        {(videoFile.size / (1024 * 1024)).toFixed(2)} MB
+                        Total: {(videos.reduce((sum, v) => sum + v.file.size, 0) / (1024 * 1024)).toFixed(2)} MB
                       </p>
                       <p className={`text-sm mt-3 ${theme === "dark" ? "text-purple-300" : "text-blue-600"}`}>
-                        Click or drop to replace
+                        Click or drop to add more videos
                       </p>
                     </div>
                   ) : (
                     <div>
                       <p className={`text-xl mb-2 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
-                        Drop video here or click to upload
+                        Drop videos here or click to upload
                       </p>
                       <p className={`text-sm ${theme === "dark" ? "text-white/50" : "text-gray-500"}`}>
-                        Supports MP4, MOV, AVI, and more
+                        Supports multiple videos • MP4, MOV, AVI, and more
                       </p>
                     </div>
                   )}
@@ -524,61 +596,84 @@ export default function App() {
               </div>
             </div>
 
-            {/* Error Display */}
-            {error && (
-              <div className={`mb-8 p-4 rounded-2xl border-2 ${
-                theme === "dark"
-                  ? "bg-red-500/10 border-red-500/40 text-red-300"
-                  : "bg-red-50 border-red-300 text-red-700"
-              }`}>
-                <p className="font-medium">⚠️ Error: {error}</p>
+            {/* Video Status List */}
+            {videos.length > 0 && (
+              <div className={`
+                mb-8 p-6 rounded-3xl
+                backdrop-blur-2xl border-2
+                shadow-[0_8px_32px_0_rgba(0,0,0,0.37)]
+                ${theme === "dark"
+                  ? "bg-white/5 border-white/20"
+                  : "bg-white/60 border-blue-200/60"
+                }
+              `}>
+                <h3 className={`text-lg font-semibold mb-4 ${
+                  theme === "dark" ? "text-white" : "text-gray-900"
+                }`}>
+                  Processing Status
+                </h3>
+                
+                <div className="space-y-3">
+                  {videos.map((video) => (
+                    <div
+                      key={video.id}
+                      className={`
+                        p-4 rounded-xl border
+                        transition-all duration-200
+                        ${theme === "dark"
+                          ? "bg-white/5 border-white/10 hover:bg-white/10"
+                          : "bg-white/60 border-blue-200/30 hover:bg-white/80"
+                        }
+                      `}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className={getStatusColor(video.status.status)}>
+                            {getStatusIcon(video.status.status)}
+                          </div>
+                          <span className={`font-medium truncate ${
+                            theme === "dark" ? "text-white" : "text-gray-900"
+                          }`}>
+                            {video.file.name}
+                          </span>
+                        </div>
+                        <span className={`text-sm capitalize ${getStatusColor(video.status.status)}`}>
+                          {video.status.status}
+                        </span>
+                      </div>
+                      
+                      {/* Progress bar for processing videos */}
+                      {(video.status.status === "processing" || video.status.status === "pending") && typeof video.status.progress === 'number' && (
+                        <div className={`h-2 rounded-full overflow-hidden ${
+                          theme === "dark" ? "bg-white/10" : "bg-gray-200"
+                        }`}>
+                          <div 
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              theme === "dark" 
+                                ? "bg-gradient-to-r from-purple-500 to-blue-500" 
+                                : "bg-gradient-to-r from-blue-500 to-cyan-500"
+                            }`}
+                            style={{ width: `${video.status.progress}%` }}
+                          ></div>
+                        </div>
+                      )}
+                      
+                      {/* Error message */}
+                      {video.status.status === "failed" && video.status.error_message && (
+                        <p className={`text-sm mt-2 ${
+                          theme === "dark" ? "text-red-400" : "text-red-600"
+                        }`}>
+                          {video.status.error_message}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* Process Button */}
-            {videoFile && !isProcessed && (
-              <div className="mb-12 flex justify-center">
-                <button
-                  onClick={handleProcess}
-                  disabled={isProcessing}
-                  className={`
-                    group relative px-10 py-4 rounded-full
-                    text-white font-medium text-lg
-                    transition-all duration-300
-                    hover:scale-105
-                    disabled:opacity-50 disabled:cursor-not-allowed
-                    disabled:hover:scale-100
-                    border border-white/20
-                    ${theme === "dark"
-                      ? "bg-gradient-to-r from-purple-600 via-purple-500 to-blue-600 shadow-[0_0_40px_rgba(139,92,246,0.4)] hover:shadow-[0_0_60px_rgba(139,92,246,0.6)]"
-                      : "bg-gradient-to-r from-blue-500 via-blue-600 to-cyan-500 shadow-[0_0_40px_rgba(59,130,246,0.4)] hover:shadow-[0_0_60px_rgba(59,130,246,0.6)]"
-                    }
-                  `}
-                >
-                  <span className="relative z-10 flex items-center gap-2">
-                    {isProcessing ? (
-                      <>
-                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <Video className="w-5 h-5" />
-                        Process Video
-                      </>
-                    )}
-                  </span>
-                  <div className={`absolute inset-0 rounded-full opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-300 ${
-                    theme === "dark"
-                      ? "bg-gradient-to-r from-purple-400 to-blue-400"
-                      : "bg-gradient-to-r from-blue-400 to-cyan-400"
-                  }`}></div>
-                </button>
-              </div>
-            )}
-
-            {/* Results Section */}
-            {isProcessed && (
+            {/* Results Section - Only show if at least one video is completed */}
+            {hasCompletedVideos && (
               <div className={`
                 backdrop-blur-2xl
                 border rounded-3xl
@@ -595,11 +690,84 @@ export default function App() {
                   theme === "dark" ? "text-white" : "text-gray-900"
                 }`}>
                   <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                  Processing Complete
+                  Analysis Results
                 </h2>
                 
+                {/* Video Selector Dropdown */}
+                <div className="mb-8">
+                  <label className={`block text-sm font-medium mb-2 ${
+                    theme === "dark" ? "text-white/80" : "text-gray-700"
+                  }`}>
+                    Select Video to Preview
+                  </label>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowVideoSelector(!showVideoSelector)}
+                      className={`
+                        w-full px-4 py-3 rounded-xl
+                        backdrop-blur-xl border-2
+                        flex items-center justify-between
+                        transition-all duration-200
+                        ${theme === "dark"
+                          ? "bg-white/5 border-white/20 text-white hover:bg-white/10"
+                          : "bg-white/60 border-blue-200/40 text-gray-900 hover:bg-white/80"
+                        }
+                      `}
+                    >
+                      <span className="truncate">
+                        {selectedVideo ? selectedVideo.file.name : "Select a video"}
+                      </span>
+                      <ChevronDown className={`w-5 h-5 transition-transform ${
+                        showVideoSelector ? "rotate-180" : ""
+                      }`} />
+                    </button>
+                    
+                    {showVideoSelector && (
+                      <div className={`
+                        absolute top-full left-0 right-0 mt-2
+                        backdrop-blur-2xl border-2 rounded-xl
+                        overflow-hidden shadow-[0_8px_32px_0_rgba(0,0,0,0.6)]
+                        z-20
+                        ${theme === "dark"
+                          ? "bg-[#1a1a2e]/95 border-white/20"
+                          : "bg-white/95 border-blue-200/60"
+                        }
+                      `}>
+                        {videos.filter(v => v.status.status === "completed").map((video) => (
+                          <button
+                            key={video.id}
+                            onClick={() => {
+                              setSelectedVideoId(video.id);
+                              setShowVideoSelector(false);
+                            }}
+                            className={`
+                              w-full px-4 py-3 text-left
+                              transition-all duration-200
+                              ${selectedVideoId === video.id
+                                ? theme === "dark"
+                                  ? "bg-purple-500/20 text-white"
+                                  : "bg-blue-500/20 text-gray-900"
+                                : theme === "dark"
+                                  ? "text-white hover:bg-white/10"
+                                  : "text-gray-900 hover:bg-blue-50"
+                              }
+                            `}
+                          >
+                            <div className="truncate">{video.file.name}</div>
+                            <div className={`text-xs mt-1 ${
+                              theme === "dark" ? "text-white/60" : "text-gray-600"
+                            }`}>
+                              {(video.file.size / (1024 * 1024)).toFixed(2)} MB
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
                 {/* Video Preview */}
-                {videoUrl && (
+                {selectedVideo && (
                   <div className="mb-8">
                     <div className={`
                       relative rounded-2xl overflow-hidden
@@ -612,422 +780,266 @@ export default function App() {
                       }
                     `}>
                       <video
-                        key={videoUrl}
-                        src={videoUrl}
+                        src={
+                          selectedVideo.status.status === "completed"
+                            ? ApiService.getDownloadUrl(selectedVideo.id)
+                            : selectedVideo.uploadedUrl
+                        }
                         controls
-                        controlsList="nodownload"
-                        className="w-full h-auto max-h-[400px] object-contain bg-black"
-                        onError={(e) => {
-                          console.error("Video load error:", e);
-                          setError("Failed to load video. Please try again.");
-                        }}
-                      >
-                        Your browser does not support the video tag.
-                      </video>
-                      {/* Subtle overlay gradient */}
+                        className="w-full h-auto max-h-[400px] object-contain"
+                      />
                       <div className={`absolute inset-0 pointer-events-none ${
                         theme === "dark"
                           ? "bg-gradient-to-t from-purple-900/10 to-transparent"
                           : "bg-gradient-to-t from-blue-900/5 to-transparent"
                       }`}></div>
                     </div>
+                    {selectedVideo.status.status === "completed" && (
+                      <p className={`text-xs mt-2 text-center ${
+                        theme === "dark" ? "text-white/60" : "text-gray-500"
+                      }`}>
+                        Showing processed video from backend
+                      </p>
+                    )}
                   </div>
                 )}
                 
                 {/* Analysis Results Section */}
-                <div className={`
-                  mb-8 p-6 rounded-2xl
-                  backdrop-blur-xl border-2
-                  shadow-[0_4px_16px_0_rgba(0,0,0,0.25)]
-                  ${theme === "dark"
-                    ? "bg-white/5 border-white/10"
-                    : "bg-blue-50/50 border-blue-200/40"
-                  }
-                `}>
-                  <h3 className={`text-xl mb-6 font-semibold ${
-                    theme === "dark" ? "text-white" : "text-gray-900"
-                  }`}>
-                    Analysis Results
-                  </h3>
-                  
-                  {/* Overall Score Card */}
+                {resultsData && (
                   <div className={`
-                    mb-6 p-6 rounded-2xl
+                    mb-8 p-6 rounded-2xl
                     backdrop-blur-xl border-2
-                    shadow-[0_4px_16px_0_rgba(0,0,0,0.3)]
+                    shadow-[0_4px_16px_0_rgba(0,0,0,0.25)]
                     ${theme === "dark"
-                      ? "bg-gradient-to-br from-purple-500/20 via-white/5 to-blue-500/20 border-purple-400/40"
-                      : "bg-gradient-to-br from-blue-500/20 via-white/60 to-cyan-500/20 border-blue-400/60"
+                      ? "bg-white/5 border-white/10"
+                      : "bg-blue-50/50 border-blue-200/40"
                     }
                   `}>
-                    <div className="text-center">
-                      <p className={`text-sm mb-2 uppercase tracking-wider ${
-                        theme === "dark" ? "text-white/60" : "text-gray-600"
-                      }`}>
-                        Overall Score
-                      </p>
-                      <div className="flex items-center justify-center gap-3 mb-2">
-                        <span className={`text-5xl font-bold ${
-                          theme === "dark" ? "text-white" : "text-gray-900"
+                    <h3 className={`text-xl mb-6 font-semibold ${
+                      theme === "dark" ? "text-white" : "text-gray-900"
+                    }`}>
+                      Analysis Results
+                    </h3>
+
+                    {/* Overall Score Card */}
+                    <div className={`
+                      mb-6 p-6 rounded-2xl
+                      backdrop-blur-xl border-2
+                      shadow-[0_4px_16px_0_rgba(0,0,0,0.3)]
+                      ${theme === "dark"
+                        ? "bg-gradient-to-br from-purple-500/20 via-white/5 to-blue-500/20 border-purple-400/40"
+                        : "bg-gradient-to-br from-blue-500/20 via-white/60 to-cyan-500/20 border-blue-400/60"
+                      }
+                    `}>
+                      <div className="text-center">
+                        <p className={`text-sm mb-2 uppercase tracking-wider ${
+                          theme === "dark" ? "text-white/60" : "text-gray-600"
                         }`}>
-                          {resultsData.reduce((sum, item) => sum + item.score, 0)}
-                        </span>
-                        <span className={`text-3xl ${
-                          theme === "dark" ? "text-white/40" : "text-gray-400"
-                        }`}>
-                          / {resultsData.reduce((sum, item) => sum + item.maxScore, 0)}
-                        </span>
-                      </div>
-                      <div className={`text-2xl font-semibold ${
-                        theme === "dark" ? "text-purple-300" : "text-blue-600"
-                      }`}>
-                        {Math.round((resultsData.reduce((sum, item) => sum + item.score, 0) / 
-                          resultsData.reduce((sum, item) => sum + item.maxScore, 0)) * 100)}%
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Text Results */}
-                    <div className="space-y-4">
-                      {resultsData.map((item, index) => (
-                        <div 
-                          key={index}
-                          className={`
-                            p-4 rounded-xl border
-                            transition-all duration-200
-                            hover:scale-[1.02]
-                            ${theme === "dark"
-                              ? "bg-white/5 border-white/10 hover:bg-white/10"
-                              : "bg-white/60 border-blue-200/30 hover:bg-white/80"
-                            }
-                          `}
-                        >
-                          <div className="flex justify-between items-center mb-2">
-                            <span className={`font-medium ${
-                              theme === "dark" ? "text-white" : "text-gray-900"
-                            }`}>
-                              {item.name}
-                            </span>
-                            <span className={`text-lg font-semibold ${
-                              theme === "dark" ? "text-purple-300" : "text-blue-600"
-                            }`}>
-                              {item.score}/{item.maxScore}
-                            </span>
-                          </div>
-                          {/* Progress bar */}
-                          <div className={`h-2 rounded-full overflow-hidden ${
-                            theme === "dark" ? "bg-white/10" : "bg-gray-200"
+                          Overall Score
+                        </p>
+                        <div className="flex items-center justify-center gap-3 mb-2">
+                          <span className={`text-5xl font-bold ${
+                            theme === "dark" ? "text-white" : "text-gray-900"
                           }`}>
-                            <div 
-                              className={`h-full rounded-full transition-all duration-500 ${
-                                theme === "dark" 
-                                  ? "bg-gradient-to-r from-purple-500 to-blue-500" 
-                                  : "bg-gradient-to-r from-blue-500 to-cyan-500"
-                              }`}
-                              style={{ width: `${(item.score / item.maxScore) * 100}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    
-                    {/* Pie Chart */}
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="w-full h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={chartData}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={60}
-                              outerRadius={100}
-                              paddingAngle={2}
-                              dataKey="value"
-                            >
-                              {chartData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={getColor(index)} />
-                              ))}
-                            </Pie>
-                            <Tooltip 
-                              contentStyle={{
-                                backgroundColor: theme === "dark" ? "rgba(26, 26, 46, 0.95)" : "rgba(255, 255, 255, 0.95)",
-                                border: theme === "dark" ? "2px solid rgba(255, 255, 255, 0.2)" : "2px solid rgba(59, 130, 246, 0.3)",
-                                borderRadius: "12px",
-                                backdropFilter: "blur(10px)",
-                              }}
-                              itemStyle={{
-                                color: theme === "dark" ? "#ffffff" : "#1f2937",
-                              }}
-                              labelStyle={{
-                                color: theme === "dark" ? "#ffffff" : "#1f2937",
-                              }}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                      
-                      {/* Custom Legend */}
-                      <div className="w-full mt-4 space-y-2">
-                        {resultsData.map((item, index) => (
-                          <div key={index} className="flex items-center gap-2 text-sm">
-                            <div 
-                              className="w-3 h-3 rounded-sm flex-shrink-0"
-                              style={{ backgroundColor: categoryColors[index] }}
-                            ></div>
-                            <span className={`truncate ${
-                              theme === "dark" ? "text-white/80" : "text-gray-700"
-                            }`}>
-                              {item.name}
-                            </span>
-                          </div>
-                        ))}
-                        <div className="flex items-center gap-2 text-sm pt-2 border-t border-white/10">
-                          <div 
-                            className="w-3 h-3 rounded-sm flex-shrink-0"
-                            style={{ backgroundColor: remainingColor }}
-                          ></div>
-                          <span className={`${
-                            theme === "dark" ? "text-white/60" : "text-gray-500"
+                            {resultsData.overall_score}
+                          </span>
+                          <span className={`text-3xl ${
+                            theme === "dark" ? "text-white/40" : "text-gray-400"
                           }`}>
-                            Room for improvement
+                            / {resultsData.max_score}
                           </span>
                         </div>
+                        <div className={`text-2xl font-semibold ${
+                          theme === "dark" ? "text-purple-300" : "text-blue-600"
+                        }`}>
+                          {resultsData.percentage.toFixed(1)}%
+                        </div>
                       </div>
                     </div>
+                    
+                    {/* Categories Section with Pie Chart */}
+                    {chartData.length > 0 && (
+                      <div className={`
+                        p-6 rounded-2xl
+                        backdrop-blur-xl border-2
+                        ${theme === "dark"
+                          ? "bg-white/5 border-white/10"
+                          : "bg-white/60 border-blue-200/30"
+                        }
+                      `}>
+                        <h4 className={`text-lg font-semibold mb-6 ${
+                          theme === "dark" ? "text-white" : "text-gray-900"
+                        }`}>
+                          Category Breakdown
+                        </h4>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                          {/* Pie Chart */}
+                          <div className="flex flex-col items-center justify-center">
+                            <div className="w-full h-[350px]">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie
+                                    data={chartData}
+                                    cx="50%"
+                                    cy="50%"
+                                    labelLine={false}
+                                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                                    outerRadius={100}
+                                    fill="#8884d8"
+                                    dataKey="value"
+                                  >
+                                    {chartData.map((entry, index) => (
+                                      <Cell key={`cell-${index}`} fill={entry.color} />
+                                    ))}
+                                  </Pie>
+                                  <Tooltip
+                                    content={({ active, payload }) => {
+                                      if (active && payload && payload.length) {
+                                        const data = payload[0].payload;
+                                        return (
+                                          <div className={`
+                                            p-4 rounded-xl border-2
+                                            backdrop-blur-2xl
+                                            shadow-2xl
+                                            ${theme === "dark"
+                                              ? "bg-[#1a1a2e]/95 border-white/20"
+                                              : "bg-white/95 border-blue-200/60"
+                                            }
+                                          `}>
+                                            <p className={`font-semibold mb-2 ${
+                                              theme === "dark" ? "text-white" : "text-gray-900"
+                                            }`}>
+                                              {data.name}
+                                            </p>
+                                            <pre className={`text-xs whitespace-pre-wrap ${
+                                              theme === "dark" ? "text-white/80" : "text-gray-700"
+                                            }`}>
+                                              {JSON.stringify(data.categoryData, null, 2)}
+                                            </pre>
+                                          </div>
+                                        );
+                                      }
+                                      return null;
+                                    }}
+                                  />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </div>
+
+                            {/* Legend */}
+                            <div className="w-full mt-4 space-y-2">
+                              {chartData.map((item, index) => (
+                                <div key={index} className="flex items-center gap-2 text-sm">
+                                  <div
+                                    className="w-4 h-4 rounded-sm flex-shrink-0"
+                                    style={{ backgroundColor: item.color }}
+                                  ></div>
+                                  <span className={`${
+                                    theme === "dark" ? "text-white/80" : "text-gray-700"
+                                  }`}>
+                                    {item.name}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Category Details List */}
+                          <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                            {resultsData?.categories.map((category, index) => (
+                              <div
+                                key={index}
+                                className={`
+                                  p-4 rounded-xl border-2
+                                  transition-all duration-200
+                                  hover:scale-[1.02]
+                                  ${theme === "dark"
+                                    ? "bg-white/5 border-white/10 hover:bg-white/10"
+                                    : "bg-white/80 border-blue-200/40 hover:bg-white"
+                                  }
+                                `}
+                              >
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div
+                                    className="w-3 h-3 rounded-full flex-shrink-0"
+                                    style={{ backgroundColor: categoryColors[index % categoryColors.length] }}
+                                  ></div>
+                                  <span className={`font-semibold ${
+                                    theme === "dark" ? "text-white" : "text-gray-900"
+                                  }`}>
+                                    Category {index + 1}
+                                  </span>
+                                </div>
+                                <pre className={`text-xs whitespace-pre-wrap ${
+                                  theme === "dark" ? "text-white/70" : "text-gray-600"
+                                }`}>
+                                  {JSON.stringify(category, null, 2)}
+                                </pre>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <p className={`text-xs mt-4 text-center ${
+                          theme === "dark" ? "text-white/50" : "text-gray-500"
+                        }`}>
+                          Hover over pie chart sections to see detailed category information
+                        </p>
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
                 
-                {/* Side-by-Side Save Buttons with Dropdowns */}
+                {/* Save Buttons */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Save Video Button with Dropdown */}
-                  <div className="relative">
-                    <button
-                      onClick={() => {
-                        setShowVideoDropdown(!showVideoDropdown);
-                        setShowReportDropdown(false);
-                      }}
-                      className={`
-                        group w-full h-14 px-6
-                        backdrop-blur-xl
-                        border-2
-                        rounded-2xl
-                        transition-all duration-200
-                        flex items-center justify-center gap-3
-                        shadow-lg hover:shadow-xl
-                        hover:scale-[1.02]
-                        ${theme === "dark"
-                          ? "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/30"
-                          : "bg-blue-500/10 border-blue-500/30 text-gray-900 hover:bg-blue-500/20 hover:border-blue-500/50"
-                        }
-                      `}
-                    >
-                      <Download className="w-5 h-5 group-hover:animate-bounce" />
-                      <span className="font-medium">Save Video</span>
-                    </button>
+                  {/* Save Video Button */}
+                  <button
+                    onClick={handleSaveVideo}
+                    disabled={!selectedVideoId || selectedVideo?.status.status !== "completed"}
+                    className={`
+                      group w-full h-14 px-6
+                      backdrop-blur-xl
+                      border-2
+                      rounded-2xl
+                      transition-all duration-200
+                      flex items-center justify-center gap-3
+                      shadow-lg hover:shadow-xl
+                      hover:scale-[1.02]
+                      disabled:opacity-50 disabled:cursor-not-allowed
+                      ${theme === "dark"
+                        ? "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/30"
+                        : "bg-blue-500/10 border-blue-500/30 text-gray-900 hover:bg-blue-500/20 hover:border-blue-500/50"
+                      }
+                    `}
+                  >
+                    <Download className="w-5 h-5 group-hover:animate-bounce" />
+                    <span className="font-medium">Download Processed Video</span>
+                  </button>
 
-                    {/* Video Dropdown Menu */}
-                    {showVideoDropdown && (
-                      <div className={`
-                        absolute top-full left-0 right-0 mt-2
-                        backdrop-blur-2xl
-                        border-2 rounded-2xl
-                        overflow-hidden
-                        shadow-[0_8px_32px_0_rgba(0,0,0,0.6)]
-                        z-10
-                        ${theme === "dark"
-                          ? "bg-[#1a1a2e]/95 border-white/20"
-                          : "bg-white/95 border-blue-200/60"
-                        }
-                      `}>
-                        <button
-                          onClick={() => {
-                            setExportFormat("mp4");
-                            handleSave("mp4");
-                            setShowVideoDropdown(false);
-                          }}
-                          className={`
-                            w-full px-4 py-3 text-left
-                            transition-all duration-200
-                            ${theme === "dark"
-                              ? "text-white hover:bg-white/10"
-                              : "text-gray-900 hover:bg-blue-50"
-                            }
-                          `}
-                        >
-                          <div className="font-medium">MP4</div>
-                          <div className={`text-sm ${theme === "dark" ? "text-white/60" : "text-gray-600"}`}>
-                            High Compatibility
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setExportFormat("mov");
-                            handleSave("mov");
-                            setShowVideoDropdown(false);
-                          }}
-                          className={`
-                            w-full px-4 py-3 text-left
-                            transition-all duration-200
-                            ${theme === "dark"
-                              ? "text-white hover:bg-white/10"
-                              : "text-gray-900 hover:bg-blue-50"
-                            }
-                          `}
-                        >
-                          <div className="font-medium">MOV</div>
-                          <div className={`text-sm ${theme === "dark" ? "text-white/60" : "text-gray-600"}`}>
-                            Apple ProRes
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setExportFormat("gif");
-                            handleSave("gif");
-                            setShowVideoDropdown(false);
-                          }}
-                          className={`
-                            w-full px-4 py-3 text-left
-                            transition-all duration-200
-                            ${theme === "dark"
-                              ? "text-white hover:bg-white/10"
-                              : "text-gray-900 hover:bg-blue-50"
-                            }
-                          `}
-                        >
-                          <div className="font-medium">GIF</div>
-                          <div className={`text-sm ${theme === "dark" ? "text-white/60" : "text-gray-600"}`}>
-                            Animated Image
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setExportFormat("webm");
-                            handleSave("webm");
-                            setShowVideoDropdown(false);
-                          }}
-                          className={`
-                            w-full px-4 py-3 text-left
-                            transition-all duration-200
-                            ${theme === "dark"
-                              ? "text-white hover:bg-white/10"
-                              : "text-gray-900 hover:bg-blue-50"
-                            }
-                          `}
-                        >
-                          <div className="font-medium">WebM</div>
-                          <div className={`text-sm ${theme === "dark" ? "text-white/60" : "text-gray-600"}`}>
-                            Web Optimized
-                          </div>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Save Report Button with Dropdown */}
-                  <div className="relative">
-                    <button
-                      onClick={() => {
-                        setShowReportDropdown(!showReportDropdown);
-                        setShowVideoDropdown(false);
-                      }}
-                      className={`
-                        group w-full h-14 px-6
-                        backdrop-blur-xl
-                        border-2
-                        rounded-2xl
-                        transition-all duration-200
-                        flex items-center justify-center gap-3
-                        shadow-lg hover:shadow-xl
-                        hover:scale-[1.02]
-                        ${theme === "dark"
-                          ? "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/30"
-                          : "bg-blue-500/10 border-blue-500/30 text-gray-900 hover:bg-blue-500/20 hover:border-blue-500/50"
-                        }
-                      `}
-                    >
-                      <Download className="w-5 h-5 group-hover:animate-bounce" />
-                      <span className="font-medium">Save Report</span>
-                    </button>
-
-                    {/* Report Dropdown Menu */}
-                    {showReportDropdown && (
-                      <div className={`
-                        absolute top-full left-0 right-0 mt-2
-                        backdrop-blur-2xl
-                        border-2 rounded-2xl
-                        overflow-hidden
-                        shadow-[0_8px_32px_0_rgba(0,0,0,0.6)]
-                        z-10
-                        ${theme === "dark"
-                          ? "bg-[#1a1a2e]/95 border-white/20"
-                          : "bg-white/95 border-blue-200/60"
-                        }
-                      `}>
-                        <button
-                          onClick={() => {
-                            setReportFormat("pdf");
-                            handleSaveReport("pdf");
-                            setShowReportDropdown(false);
-                          }}
-                          className={`
-                            w-full px-4 py-3 text-left
-                            transition-all duration-200
-                            ${theme === "dark"
-                              ? "text-white hover:bg-white/10"
-                              : "text-gray-900 hover:bg-blue-50"
-                            }
-                          `}
-                        >
-                          <div className="font-medium">PDF</div>
-                          <div className={`text-sm ${theme === "dark" ? "text-white/60" : "text-gray-600"}`}>
-                            Portable Document Format
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setReportFormat("docx");
-                            handleSaveReport("docx");
-                            setShowReportDropdown(false);
-                          }}
-                          className={`
-                            w-full px-4 py-3 text-left
-                            transition-all duration-200
-                            ${theme === "dark"
-                              ? "text-white hover:bg-white/10"
-                              : "text-gray-900 hover:bg-blue-50"
-                            }
-                          `}
-                        >
-                          <div className="font-medium">DOCX</div>
-                          <div className={`text-sm ${theme === "dark" ? "text-white/60" : "text-gray-600"}`}>
-                            Microsoft Word Document
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setReportFormat("xlsx");
-                            handleSaveReport("xlsx");
-                            setShowReportDropdown(false);
-                          }}
-                          className={`
-                            w-full px-4 py-3 text-left
-                            transition-all duration-200
-                            ${theme === "dark"
-                              ? "text-white hover:bg-white/10"
-                              : "text-gray-900 hover:bg-blue-50"
-                            }
-                          `}
-                        >
-                          <div className="font-medium">XLSX</div>
-                          <div className={`text-sm ${theme === "dark" ? "text-white/60" : "text-gray-600"}`}>
-                            Microsoft Excel Spreadsheet
-                          </div>
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  {/* Download Report PDF Button */}
+                  <button
+                    onClick={() => handleSaveReport("pdf")}
+                    disabled={!selectedVideoId || !resultsData}
+                    className={`
+                      group w-full h-14 px-6
+                      backdrop-blur-xl
+                      border-2
+                      rounded-2xl
+                      transition-all duration-200
+                      flex items-center justify-center gap-3
+                      shadow-lg hover:shadow-xl
+                      hover:scale-[1.02]
+                      disabled:opacity-50 disabled:cursor-not-allowed
+                      ${theme === "dark"
+                        ? "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/30"
+                        : "bg-blue-500/10 border-blue-500/30 text-gray-900 hover:bg-blue-500/20 hover:border-blue-500/50"
+                      }
+                    `}
+                  >
+                    <Download className="w-5 h-5 group-hover:animate-bounce" />
+                    <span className="font-medium">Download Report (PDF)</span>
+                  </button>
                 </div>
               </div>
             )}
@@ -1066,7 +1078,6 @@ export default function App() {
           </DialogHeader>
           
           <div className="space-y-6 mt-4">
-            {/* Step 1 */}
             <div className={`p-5 rounded-2xl border-2 ${
               theme === "dark"
                 ? "bg-white/5 border-white/10"
@@ -1084,18 +1095,17 @@ export default function App() {
                   <h3 className={`font-semibold mb-2 ${
                     theme === "dark" ? "text-white" : "text-gray-900"
                   }`}>
-                    Upload Your Video
+                    Choose Your Activity
                   </h3>
                   <p className={`text-sm ${
                     theme === "dark" ? "text-white/70" : "text-gray-600"
                   }`}>
-                    Click the upload area or drag and drop your video file. Supported formats include MP4, MOV, AVI, and more.
+                    Select either Handstand or Straddle Jump to begin your analysis.
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Step 2 */}
             <div className={`p-5 rounded-2xl border-2 ${
               theme === "dark"
                 ? "bg-white/5 border-white/10"
@@ -1113,18 +1123,17 @@ export default function App() {
                   <h3 className={`font-semibold mb-2 ${
                     theme === "dark" ? "text-white" : "text-gray-900"
                   }`}>
-                    Process the Video
+                    Upload Your Videos
                   </h3>
                   <p className={`text-sm ${
                     theme === "dark" ? "text-white/70" : "text-gray-600"
                   }`}>
-                    Click the "Process Video" button to start AI-powered analysis. The processing typically takes a few seconds.
+                    Click the upload area or drag and drop multiple video files. Videos will automatically start processing.
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Step 3 */}
             <div className={`p-5 rounded-2xl border-2 ${
               theme === "dark"
                 ? "bg-white/5 border-white/10"
@@ -1147,7 +1156,7 @@ export default function App() {
                   <p className={`text-sm ${
                     theme === "dark" ? "text-white/70" : "text-gray-600"
                   }`}>
-                    Preview the processed video, then choose your export format (MP4, MOV, GIF, WebM) and save. You can also download the analysis report in PDF, DOCX, or XLSX format.
+                    Monitor processing status, preview completed videos, and download results in your preferred format.
                   </p>
                 </div>
               </div>

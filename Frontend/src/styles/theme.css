@@ -178,18 +178,4 @@
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
   }
-
-  /* Custom animation for progress bar shimmer effect */
-  @keyframes shimmer {
-    0% {
-      transform: translateX(-100%);
-    }
-    100% {
-      transform: translateX(100%);
-    }
-  }
-
-  .animate-shimmer {
-    animation: shimmer 2s infinite;
-  }
 }
