@@ -16,7 +16,7 @@ class ProcessingPipelineService:
         self.segmentation_repository = MediapipeSegmentationRepository()
         self.pose_scoring_service = PoseScoringService()
         
-    def analyze_video(self, input_video_path, output_video_path, output_pdf_path, output_json_path, exercise_name):
+    def analyze_video(self: str, input_video_path: str, output_video_path: str, output_pdf_path: str, output_json_path: str, exercise_name: str, status_json_path: str):
         """
         Analyzes a video, generates pose scores, and creates visualization files.
 
@@ -31,47 +31,59 @@ class ProcessingPipelineService:
             output_json_path (str): Path to save the JSON file with pose scores.
             exercise_name (str): The name of the exercise being analyzed.
         """
-        pose_scores_per_frame, frames = self.pose_scoring_service.get_poses_from_video(input_video_path, exercise_name)
         
-        if not pose_scores_per_frame:
+        try:
+            with open(status_json_path, 'w') as status_file:
+                json.dump({"status": "processing", "progress": 0}, json_file)
+
+            
+            pose_scores_per_frame, frames = self.pose_scoring_service.get_poses_from_video(input_video_path, exercise_name)
+            
+            if not pose_scores_per_frame:
+                with open(output_json_path, 'w') as json_file:
+                    json.dump({}, json_file)
+                with open(output_pdf_path, 'w') as pdf_file:
+                    pass
+                return
+            
+            total_scores = {}
+            for frame_scores in pose_scores_per_frame:
+                for pose_name, data in frame_scores.items():
+                    if isinstance(data, dict):
+                        if pose_name not in total_scores:
+                            total_scores[pose_name] = 0
+                        total_scores[pose_name] += data.get('score', 0)
+
+            score_sum = sum(total_scores.values())
+            if score_sum > 0:
+                normalized_total_scores = {k: v / score_sum for k, v in total_scores.items()}
+            else:
+                normalized_total_scores = total_scores
+
             with open(output_json_path, 'w') as json_file:
-                json.dump({}, json_file)
+                json.dump(normalized_total_scores, json_file, indent=4)
+
+            pose_labels = []
+            for frame_scores in pose_scores_per_frame:
+                phase = frame_scores.get("phase", "unknown")
+                label = f"Phase: {phase}\n"
+                for pose_name, data in frame_scores.items():
+                    if pose_name == "phase":
+                        continue
+                    label += f"{pose_name}: {data['score']:.2f}"
+                    if data.get('sub_scores'):
+                        label += " | "
+                        label += " | ".join([f"{sub_pose}: {sub_score:.2f}" for sub_pose, sub_score in data['sub_scores'].items()])
+                    label += "\n"
+                pose_labels.append(label)
+
+            save_visualized_video(output_video_path, frames, input_video_path, pose_labels)
+
             with open(output_pdf_path, 'w') as pdf_file:
                 pass
-            return
-        
-        total_scores = {}
-        for frame_scores in pose_scores_per_frame:
-            for pose_name, data in frame_scores.items():
-                if isinstance(data, dict):
-                    if pose_name not in total_scores:
-                        total_scores[pose_name] = 0
-                    total_scores[pose_name] += data.get('score', 0)
-
-        score_sum = sum(total_scores.values())
-        if score_sum > 0:
-            normalized_total_scores = {k: v / score_sum for k, v in total_scores.items()}
-        else:
-            normalized_total_scores = total_scores
-
-        with open(output_json_path, 'w') as json_file:
-            json.dump(normalized_total_scores, json_file, indent=4)
-
-        pose_labels = []
-        for frame_scores in pose_scores_per_frame:
-            phase = frame_scores.get("phase", "unknown")
-            label = f"Phase: {phase}\n"
-            for pose_name, data in frame_scores.items():
-                if pose_name == "phase":
-                    continue
-                label += f"{pose_name}: {data['score']:.2f}"
-                if data.get('sub_scores'):
-                    label += " | "
-                    label += " | ".join([f"{sub_pose}: {sub_score:.2f}" for sub_pose, sub_score in data['sub_scores'].items()])
-                label += "\n"
-            pose_labels.append(label)
-
-        save_visualized_video(output_video_path, frames, input_video_path, pose_labels)
-
-        with open(output_pdf_path, 'w') as pdf_file:
-            pass
+            
+            with open(status_json_path, 'w') as status_file:
+                json.dump({"status": "completed", "progress": 1}, json_file)
+        except:
+            with open(status_json_path, 'w') as status_file:
+                json.dump({"status": "failed", "progress": 0}, json_file)
