@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export interface UploadResponse {
   pid: string;
@@ -29,7 +29,7 @@ export interface AnalysisResult {
 export class ApiService {
   static async uploadVideo(file: File): Promise<UploadResponse> {
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("video", file);
 
     const response = await fetch(`${API_BASE_URL}/upload`, {
       method: "POST",
