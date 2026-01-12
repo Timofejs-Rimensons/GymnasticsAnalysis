@@ -1,11 +1,22 @@
-// Use relative URLs when served by nginx (production), otherwise use env variable for local dev
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+
+export interface UploadResponse {
+  pid: string;
+  message?: string;
+}
+
+export interface StatusResponse {
+  status: "pending" | "processing" | "completed" | "failed";
+  progress: number | boolean;
+  error_message?: string;
+}
+
+export interface ProcessRequest {
+  exercise_type: string;
+}
 
 export interface CategoryScore {
-  name: string;
-  score: number;
-  maxScore: number;
-  feedback?: string;
+  // write when the json structure is known
 }
 
 export interface AnalysisResult {
@@ -13,102 +24,114 @@ export interface AnalysisResult {
   max_score: number;
   percentage: number;
   categories: CategoryScore[];
-  video_id: string;
-  processed_video_path: string;
-}
-
-export interface UploadResponse {
-  video_id: string;
-  filename: string;
-  size: number;
-  message: string;
-}
-
-export interface ExportResponse {
-  download_url: string;
-  filename: string;
-  format: string;
 }
 
 export class ApiService {
   static async uploadVideo(file: File): Promise<UploadResponse> {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append("file", file);
 
-    const response = await fetch(`${API_BASE_URL}/video/upload`, {
-      method: 'POST',
+    const response = await fetch(`${API_BASE_URL}/upload`, {
+      method: "POST",
       body: formData,
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Upload failed');
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Upload failed" }));
+      throw new Error(error.detail || `Upload error: ${response.statusText}`);
     }
 
     return response.json();
   }
-
-  static async processVideo(videoId: string, option: number): Promise<AnalysisResult> {
-    const response = await fetch(`${API_BASE_URL}/video/process`, {
-      method: 'POST',
+  static async startProcessing(
+    pid: string,
+    exercise_type: string
+  ): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/process/${pid}`, {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({ video_id: videoId, option }),
+      body: JSON.stringify({ exercise_type: exercise_type }),
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Processing failed');
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Processing request failed" }));
+      throw new Error(error.detail || "Failed to trigger processing");
     }
-
-    return response.json();
   }
 
-  static async getProcessedVideo(videoId: string): Promise<string> {
-    return `${API_BASE_URL}/video/processed/${videoId}`;
-  }
-
-  static async exportVideo(videoId: string, format: string): Promise<ExportResponse> {
-    const response = await fetch(`${API_BASE_URL}/video/export/video`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ video_id: videoId, format }),
-    });
+  static async getStatus(pid: string): Promise<StatusResponse> {
+    const response = await fetch(`${API_BASE_URL}/status/${pid}`);
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Export failed');
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Failed to check status" }));
+      throw new Error(error.detail || "Failed to check status");
     }
-
-    return response.json();
+    const data: StatusResponse = await response.json();
+    return data;
   }
 
-  static async exportReport(videoId: string, format: string): Promise<ExportResponse> {
-    const response = await fetch(`${API_BASE_URL}/video/export/report`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ video_id: videoId, format }),
+  static async pollUntilComplete(
+    pid: string,
+    interval = 2000
+  ): Promise<StatusResponse> {
+    return new Promise<StatusResponse>((resolve, reject) => {
+      const checkStatus = async () => {
+        try {
+          const res = await this.getStatus(pid);
+
+          // Completed: resolve with the full status payload
+          if (
+            res.status === "completed" ||
+            res.progress === true ||
+            res.progress === 1 || // if server uses 0/1
+            res.progress === 100 // if server uses percentage
+          ) {
+            resolve(res);
+            return;
+          }
+
+          // Failed: reject with server-provided error
+          if (res.status === "failed") {
+            reject(new Error(res.error_message || "Processing failed"));
+            return;
+          }
+
+          // Still pending/processing: poll again
+          setTimeout(checkStatus, interval);
+        } catch (err) {
+          reject(err);
+        }
+      };
+
+      checkStatus();
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Report generation failed');
-    }
-
-    return response.json();
   }
 
-  static downloadFile(url: string, filename: string) {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  static async getResponseJson(pid: string): Promise<AnalysisResult> {
+    const response = await fetch(`${API_BASE_URL}/download/reportjson/${pid}`);
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Failed to fetch analysis result" }));
+      throw new Error(error.detail || "Failed to fetch analysis result");
+    }
+    const data: AnalysisResult = await response.json();
+    return data;
+  }
+
+  static getDownloadUrl(pid: string): string {
+    return `${API_BASE_URL}/download/video/${pid}`;
+  }
+
+  static getReportPdfUrl(pid: string): string {
+    return `${API_BASE_URL}/download/reportpdf/${pid}`;
   }
 }

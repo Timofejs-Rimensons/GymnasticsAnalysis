@@ -446,3 +446,39 @@ dist-ssr/
 
 # Tests
 coverage/
+
+# React & TypeScript
+*.tsbuildinfo
+.eslintcache
+.cache
+.parcel-cache
+.next/
+out/
+.turbo/
+.vercel/
+
+# Package manager logs
+npm-debug.log*
+npm-error.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+.yarn/install-state.gz
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.production.local
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
