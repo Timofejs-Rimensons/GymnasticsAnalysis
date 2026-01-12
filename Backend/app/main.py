@@ -3,6 +3,8 @@ from fastapi.staticfiles import StaticFiles
 from api.routers import router, TEMP_DIR
 import os
 
+os.environ['GLOG_minloglevel'] = '2'
+
 app = FastAPI(title="GymnasticsAPI")
 
 # Mount the router for API endpoints

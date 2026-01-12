@@ -12,6 +12,12 @@ class MediapipeSegmentationRepository:
 
     def __init__(self):
         self.mp_pose = mp.solutions.pose
+        self.pose = self.mp_pose.Pose(
+            static_image_mode=False,
+            model_complexity=2,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
 
         # Selected MediaPipe joint indices (13 joints)
         self.joint_ids = [
@@ -125,36 +131,36 @@ class MediapipeSegmentationRepository:
         frames = []
         normalized_poses = []
 
-        with self.mp_pose.Pose(
-            model_complexity=2,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        ) as pose:
-            
-            while video_capture.isOpened():
-                success, frame = video_capture.read()
-                if not success:
-                    break
+        # The MediaPipe Pose object is now initialized in the constructor
+        # and reused for each video. Because 'static_image_mode' is False,
+        # MediaPipe will attempt to track the pose between frames. When a new
+        # video starts, tracking will likely fail, and the model will
+        # automatically re-run person detection, effectively treating it as a
+        # new stream.
+        while video_capture.isOpened():
+            success, frame = video_capture.read()
+            if not success:
+                break
 
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                result = pose.process(frame_rgb)
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = self.pose.process(frame_rgb)
 
-                normalized_pose, mid_hip_reference, bounding_box_size, min_coordinates = self._normalize_pose(
-                    result.pose_landmarks,
-                    frame_width,
-                    frame_height
-                )
+            normalized_pose, mid_hip_reference, bounding_box_size, min_coordinates = self._normalize_pose(
+                result.pose_landmarks,
+                frame_width,
+                frame_height
+            )
 
-                frames.append({
-                    "pose_3d": normalized_pose,
-                    "reference": mid_hip_reference,
-                    "bbox_size": bounding_box_size,
-                    "min_xy": min_coordinates
-                })
+            frames.append({
+                "pose_3d": normalized_pose,
+                "reference": mid_hip_reference,
+                "bbox_size": bounding_box_size,
+                "min_xy": min_coordinates
+            })
 
-                normalized_poses.append(
-                    normalized_pose if normalized_pose is not None else None
-                )
+            normalized_poses.append(
+                normalized_pose if normalized_pose is not None else None
+            )
 
         video_capture.release()
 
