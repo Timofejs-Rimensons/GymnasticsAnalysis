@@ -12,7 +12,7 @@ export interface StatusResponse {
 }
 
 export interface ProcessRequest {
-  exercise_type: string;
+  exercise_name: string;
 }
 
 export interface CategoryScore {
@@ -47,14 +47,14 @@ export class ApiService {
   }
   static async startProcessing(
     pid: string,
-    exercise_type: string
+    exercise_name: string
   ): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/process/${pid}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ exercise_type: exercise_type }),
+      body: JSON.stringify({ exercise_name: exercise_name }),
     });
 
     if (!response.ok) {
@@ -74,8 +74,27 @@ export class ApiService {
         .catch(() => ({ detail: "Failed to check status" }));
       throw new Error(error.detail || "Failed to check status");
     }
-    const data: StatusResponse = await response.json();
-    return data;
+    
+    const rawData = await response.json();
+    
+    // Adapt backend "0-1" status to frontend Expected format
+    if (typeof rawData.status === 'number' || typeof rawData.status === 'boolean') {
+      const val = Number(rawData.status);
+      // Assuming 1 (or close to 1) is completed
+      if (val >= 1) {
+        return {
+          status: "completed",
+          progress: 100
+        };
+      } 
+      // Assuming 0 is pending/processing
+      return {
+        status: "processing",
+        progress: Math.round(val * 100)
+      };
+    }
+
+    return rawData;
   }
 
   static async pollUntilComplete(
