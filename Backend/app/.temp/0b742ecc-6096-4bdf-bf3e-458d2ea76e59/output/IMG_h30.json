@@ -1,5 +1,5 @@
 {
-    "overall_score": 30.615190042108033,
+    "overall_score": 30,
     "max_score": 100.0,
     "percentage": 30.615190042108033,
     "categories": [
@@ -8,29 +8,29 @@
             "poses": [
                 {
                     "name": "starting",
-                    "score": 0.35767352887606857,
-                    "max_score": 1.0,
+                    "score": 35,
+                    "max_score": 100,
                     "description": "Placeholder description.",
                     "improvement_needed": false
                 },
                 {
                     "name": "swing_back",
-                    "score": 0.3069873976186583,
-                    "max_score": 1.0,
+                    "score": 30,
+                    "max_score": 100,
                     "description": "Placeholder description.",
                     "improvement_needed": false
                 },
                 {
                     "name": "swing_arms",
-                    "score": 0.3003828496951955,
-                    "max_score": 1.0,
+                    "score": 30,
+                    "max_score": 100,
                     "description": "Placeholder description.",
                     "improvement_needed": false
                 },
                 {
                     "name": "landing",
-                    "score": 0.2595638254943987,
-                    "max_score": 1.0,
+                    "score": 25,
+                    "max_score": 100,
                     "description": "Placeholder description.",
                     "improvement_needed": true
                 }

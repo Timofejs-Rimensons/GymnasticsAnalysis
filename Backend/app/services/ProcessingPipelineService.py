@@ -72,14 +72,14 @@ class ProcessingPipelineService:
             
             pose_categories.append({
                 "name": pose,
-                "score": int(score * 100),
+                "score": round(score * 100),
                 "max_score": 100,
                 "description": "Placeholder description.",
                 "improvement_needed": improvement_needed
             })
 
         results = {
-            "overall_score": int(overall_score),
+            "overall_score": round(overall_score),
             "max_score": target_max_score,
             "percentage": percentage,
             "categories": [

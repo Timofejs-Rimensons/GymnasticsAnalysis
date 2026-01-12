@@ -1,0 +1,40 @@
+{
+    "overall_score": 30,
+    "max_score": 100.0,
+    "percentage": 30.70417849472617,
+    "categories": [
+        {
+            "name": "Poses",
+            "poses": [
+                {
+                    "name": "starting",
+                    "score": 35,
+                    "max_score": 100,
+                    "description": "Placeholder description.",
+                    "improvement_needed": false
+                },
+                {
+                    "name": "swing_back",
+                    "score": 30,
+                    "max_score": 100,
+                    "description": "Placeholder description.",
+                    "improvement_needed": false
+                },
+                {
+                    "name": "swing_arms",
+                    "score": 30,
+                    "max_score": 100,
+                    "description": "Placeholder description.",
+                    "improvement_needed": false
+                },
+                {
+                    "name": "landing",
+                    "score": 26,
+                    "max_score": 100,
+                    "description": "Placeholder description.",
+                    "improvement_needed": true
+                }
+            ]
+        }
+    ]
+}
