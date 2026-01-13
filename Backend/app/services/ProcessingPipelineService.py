@@ -103,7 +103,14 @@ class ProcessingPipelineService:
         with open(output_json_path, 'w') as json_file:
             json.dump(results, json_file, indent=4)
 
-    def analyze_video(self: str, input_video_path: str, output_video_path: str, output_pdf_path: str, output_json_path: str, exercise_name: str, status_json_path: str):
+    def analyze_video(self, input_video_path: str, output_video_path: str, output_pdf_path: str, output_json_path: str, exercise_name: str, status_json_path: str):
+        # Convert Path objects to strings if necessary
+        input_video_path = str(input_video_path)
+        output_video_path = str(output_video_path)
+        output_pdf_path = str(output_pdf_path)
+        output_json_path = str(output_json_path)
+        status_json_path = str(status_json_path)
+        
         pose_scores_per_frame, frames = self.pose_scoring_service.get_poses_from_video(input_video_path, exercise_name)
         
         if not pose_scores_per_frame:

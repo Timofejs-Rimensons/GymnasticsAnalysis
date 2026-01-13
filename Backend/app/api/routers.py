@@ -186,7 +186,7 @@ async def process_video(
             status_data['progress'] = 0
             status_data['last_accessed_at'] = time.time()
             json.dump(status_data, status_file)
-        raise(HTTPException(status_code=500, detail=f"Error in video processing pipeline."))
+        raise(HTTPException(status_code=500, detail="Error during video processing."))
     
     try:
         with open(status_json_path, 'r+') as f:
