@@ -79,13 +79,13 @@ class ProcessingPipelineService:
                 "improvement_needed": improvement_needed
             })
             
-        pose_categories.append({
-            "name": "Space for improvement",
-            "score": round(100 - overall_score),
-            "max_score": 100,
-            "description": "Placeholder description.",
-            "improvement_needed": bool(True)
-        })
+        # pose_categories.append({
+        #     "name": "Space for improvement",
+        #     "score": round(100 - overall_score),
+        #     "max_score": 100,
+        #     "description": "Placeholder description.",
+        #     "improvement_needed": bool(True)
+        # })
 
         results = {
             "overall_score": round(overall_score),
