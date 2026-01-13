@@ -1,8 +1,20 @@
 import { useState, useRef } from "react";
-import { Upload, Download, Video, Sun, Moon, HelpCircle, Hand, ArrowLeft, CheckCircle, XCircle, Loader, ChevronDown } from "lucide-react";
+import { Upload, Download, Video, Sun, Moon, HelpCircle, ArrowLeft, CheckCircle, XCircle, Loader, ChevronDown, AlertCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./components/ui/dialog";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
-import { ApiService, StatusResponse, AnalysisResult } from "./services/api";
+import { ApiService, StatusResponse, AnalysisResult, Pose } from "./services/api";
+
+// Handstand SVG Icon Component
+const HandstandIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 3000 3000" xmlns="http://www.w3.org/2000/svg">
+    <path fillRule="nonzero" fill="currentColor" d="M 946.203125 2260.960938 C 890.367188 2393.160156 952.273438 2545.59375 1084.46875 2601.433594 C 1216.671875 2657.269531 1369.109375 2595.363281 1424.949219 2463.164062 C 1480.78125 2330.964844 1418.878906 2178.527344 1286.679688 2122.691406 C 1154.480469 2066.855469 1002.039062 2128.757812 946.203125 2260.960938 "/>
+    <path fillRule="nonzero" fill="currentColor" d="M 1101.671875 1818.789062 C 1068.640625 1896.988281 1105.261719 1987.160156 1183.460938 2020.191406 L 1463.289062 2138.382812 C 1541.488281 2171.410156 1631.660156 2134.792969 1664.691406 2056.589844 L 1929.910156 1428.648438 C 1962.941406 1350.449219 1926.328125 1260.28125 1848.121094 1227.25 L 1568.300781 1109.058594 C 1490.101562 1076.03125 1399.921875 1112.648438 1366.890625 1190.851562 L 1101.671875 1818.789062 "/>
+    <path fill="none" strokeWidth="2824.53" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" strokeMiterlimit="10" d="M 15077.617188 17700.78125 L 15651.601562 27282.5 " transform="matrix(0.1, 0, 0, -0.1, 0, 3000)"/>
+    <path fill="none" strokeWidth="2824.53" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" strokeMiterlimit="10" d="M 18091.992188 16427.617188 L 21774.6875 25146.71875 " transform="matrix(0.1, 0, 0, -0.1, 0, 3000)"/>
+    <path fill="none" strokeWidth="2259.63" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" strokeMiterlimit="10" d="M 15612.8125 9527.890625 L 17543.007812 6038.945312 L 17439.804688 2340.859375 " transform="matrix(0.1, 0, 0, -0.1, 0, 3000)"/>
+    <path fill="none" strokeWidth="2259.63" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" strokeMiterlimit="10" d="M 11978.515625 11062.890625 L 8601.367188 12322.382812 L 5549.0625 12099.804688 " transform="matrix(0.1, 0, 0, -0.1, 0, 3000)"/>
+  </svg>
+);
 
 interface VideoUpload {
   id: string;
@@ -26,19 +38,56 @@ export default function App() {
   const resultsData = selectedVideo?.analysisResults;
 
   // Pie chart colors
-  const categoryColors = theme === "dark"
+  const poseColors = theme === "dark"
     ? ["#a78bfa", "#818cf8", "#60a5fa", "#34d399", "#fbbf24", "#f472b6", "#fb923c"]
     : ["#7c3aed", "#4f46e5", "#2563eb", "#059669", "#d97706", "#db2777", "#ea580c"];
 
-  // Prepare chart data from backend categories
-  const chartData = resultsData?.categories
-    ? resultsData.categories.map((category, index) => ({
-        name: `Category ${index + 1}`,
-        value: 1, // Equal size for visualization
-        categoryData: category, // Store full category data for tooltip
-        color: categoryColors[index % categoryColors.length]
-      }))
+  // Flatten all poses from all categories for display
+  const allPoses: (Pose & { color: string })[] = resultsData?.categories
+    ? resultsData.categories.flatMap((category) =>
+        category.poses.map((pose, poseIndex) => {
+          // Calculate global pose index for color assignment
+          const globalIndex = resultsData.categories
+            .slice(0, resultsData.categories.indexOf(category))
+            .reduce((sum, cat) => sum + cat.poses.length, 0) + poseIndex;
+
+          return {
+            ...pose,
+            color: poseColors[globalIndex % poseColors.length]
+          };
+        })
+      )
     : [];
+
+  // Calculate total possible points and current points
+  const totalMaxScore = allPoses.reduce((sum, pose) => sum + pose.max_score, 0);
+  const totalCurrentScore = allPoses.reduce((sum, pose) => sum + pose.score, 0);
+  const roomForImprovement = totalMaxScore - totalCurrentScore;
+
+  // Number of categories including "Room for Improvement"
+  const numberOfCategories = allPoses.length + 1;
+  const percentagePerCategory = 100 / numberOfCategories;
+
+  // Prepare chart data from flattened poses with equal distribution
+  const chartData = [
+    ...allPoses.map((pose) => ({
+      name: pose.name,
+      value: percentagePerCategory,
+      actualScore: pose.score,
+      maxScore: pose.max_score,
+      poseData: pose,
+      color: pose.color
+    })),
+    // Add "Room for Improvement" category
+    {
+      name: "Room for Improvement",
+      value: percentagePerCategory,
+      actualScore: roomForImprovement,
+      maxScore: totalMaxScore,
+      poseData: null,
+      color: theme === "dark" ? "#64748b" : "#94a3b8"
+    }
+  ];
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
@@ -380,9 +429,9 @@ export default function App() {
                       : "bg-white/60 border-blue-200/40 group-hover:bg-blue-500/20 group-hover:border-blue-500/40"
                     }
                   `}>
-                    <Hand className={`w-12 h-12 ${
-                      theme === "dark" ? "text-white/70 group-hover:text-purple-300" : "text-blue-500 group-hover:text-blue-600"
-                    }`} strokeWidth={1.5} />
+                    <HandstandIcon className={`w-12 h-12 ${
+                      theme === "dark" ? "text-white group-hover:text-purple-300" : "text-blue-500 group-hover:text-blue-600"
+                    }`} />
                   </div>
                 </div>
                 
@@ -450,6 +499,15 @@ export default function App() {
               <p className={`text-sm ${theme === "dark" ? "text-white/40" : "text-gray-400"}`}>
                 Powered by advanced AI processing • Secure & Private
               </p>
+              {/* Attribution for Handstand Icon */}
+              <a 
+                href="https://www.vecteezy.com/free-vector/handstand"
+                target="_blank" 
+                rel="noopener noreferrer"
+                className={`text-xs mt-2 block hover:underline ${theme === "dark" ? "text-white/20 hover:text-white/40" : "text-gray-400 hover:text-gray-600"}`}
+              >
+                Handstand Vectors by Vecteezy
+              </a>
             </div>
           </>
         ) : (
@@ -780,6 +838,7 @@ export default function App() {
                       }
                     `}>
                       <video
+                        key={selectedVideo.status.status === "completed" ? `processed-${selectedVideo.id}` : `preview-${selectedVideo.id}`}
                         src={
                           selectedVideo.status.status === "completed"
                             ? ApiService.getDownloadUrl(selectedVideo.id)
@@ -798,7 +857,7 @@ export default function App() {
                       <p className={`text-xs mt-2 text-center ${
                         theme === "dark" ? "text-white/60" : "text-gray-500"
                       }`}>
-                        Showing processed video from backend
+                        Processed Video Preview
                       </p>
                     )}
                   </div>
@@ -856,8 +915,8 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                    
-                    {/* Categories Section with Pie Chart */}
+
+                    {/* Poses Section with Pie Chart */}
                     {chartData.length > 0 && (
                       <div className={`
                         p-6 rounded-2xl
@@ -867,15 +926,74 @@ export default function App() {
                           : "bg-white/60 border-blue-200/30"
                         }
                       `}>
-                        <h4 className={`text-lg font-semibold mb-6 ${
-                          theme === "dark" ? "text-white" : "text-gray-900"
-                        }`}>
-                          Category Breakdown
-                        </h4>
-
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                          {/* Pie Chart */}
-                          <div className="flex flex-col items-center justify-center">
+                          {/* Left Side: Individual Pose Cards */}
+                          <div className="space-y-4">
+                            {allPoses.map((pose, index) => (
+                              <div
+                                key={index}
+                                className={`
+                                  p-5 rounded-xl
+                                  backdrop-blur-xl border-2
+                                  transition-all duration-200
+                                  ${theme === "dark"
+                                    ? "bg-white/5 border-white/10"
+                                    : "bg-white/60 border-blue-200/30"
+                                  }
+                                `}
+                              >
+                                <div className="flex items-center justify-between mb-3">
+                                  <h4 className={`font-semibold ${
+                                    theme === "dark" ? "text-white" : "text-gray-900"
+                                  }`}>
+                                    {pose.name}
+                                  </h4>
+                                  <span className={`text-lg font-bold ${
+                                    theme === "dark" ? "text-white" : "text-gray-900"
+                                  }`}>
+                                    {pose.score}/{pose.max_score}
+                                  </span>
+                                </div>
+
+                                {/* Progress Bar */}
+                                <div className={`h-2 rounded-full overflow-hidden mb-3 ${
+                                  theme === "dark" ? "bg-white/10" : "bg-gray-200"
+                                }`}>
+                                  <div
+                                    className="h-full rounded-full transition-all duration-300"
+                                    style={{
+                                      width: `${(pose.score / pose.max_score) * 100}%`,
+                                      background: `linear-gradient(to right, ${pose.color}, ${pose.color}dd)`
+                                    }}
+                                  ></div>
+                                </div>
+
+                                {/* Description */}
+                                {pose.description && (
+                                  <p className={`text-sm ${
+                                    theme === "dark" ? "text-white/70" : "text-gray-600"
+                                  }`}>
+                                    {pose.description}
+                                  </p>
+                                )}
+
+                                {/* Improvement Needed Badge */}
+                                {(pose.improvement_needed || (pose.score / pose.max_score) <= 0.5) && (
+                                  <div className={`mt-2 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
+                                    theme === "dark"
+                                      ? "bg-yellow-500/20 text-yellow-300"
+                                      : "bg-yellow-500/20 text-yellow-700"
+                                  }`}>
+                                    <AlertCircle className="w-3 h-3" />
+                                    <span>Needs improvement</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Right Side: Pie Chart */}
+                          <div className="flex flex-col items-center justify-start">
                             <div className="w-full h-[350px]">
                               <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
@@ -884,8 +1002,8 @@ export default function App() {
                                     cx="50%"
                                     cy="50%"
                                     labelLine={false}
-                                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
                                     outerRadius={100}
+                                    innerRadius={60}
                                     fill="#8884d8"
                                     dataKey="value"
                                   >
@@ -896,7 +1014,9 @@ export default function App() {
                                   <Tooltip
                                     content={({ active, payload }) => {
                                       if (active && payload && payload.length) {
-                                        const data = payload[0].payload;
+                                        const entry = payload[0].payload;
+                                        const isRoomForImprovement = entry.name === "Room for Improvement";
+
                                         return (
                                           <div className={`
                                             p-4 rounded-xl border-2
@@ -907,16 +1027,32 @@ export default function App() {
                                               : "bg-white/95 border-blue-200/60"
                                             }
                                           `}>
-                                            <p className={`font-semibold mb-2 ${
+                                            <p className={`font-semibold mb-1 ${
                                               theme === "dark" ? "text-white" : "text-gray-900"
                                             }`}>
-                                              {data.name}
+                                              {entry.name}
                                             </p>
-                                            <pre className={`text-xs whitespace-pre-wrap ${
+                                            <p className={`text-sm mb-1 ${
                                               theme === "dark" ? "text-white/80" : "text-gray-700"
                                             }`}>
-                                              {JSON.stringify(data.categoryData, null, 2)}
-                                            </pre>
+                                              {isRoomForImprovement
+                                                ? `Points to gain: ${entry.actualScore}/${entry.maxScore}`
+                                                : `Score: ${entry.actualScore}/${entry.maxScore}`
+                                              }
+                                            </p>
+                                            <p className={`text-xs ${
+                                              theme === "dark" ? "text-white/60" : "text-gray-600"
+                                            }`}>
+                                              {isRoomForImprovement
+                                                ? "Total points needed for perfect score"
+                                                : entry.poseData?.description || ""
+                                              }
+                                            </p>
+                                            <p className={`text-xs mt-1 ${
+                                              theme === "dark" ? "text-purple-300" : "text-blue-600"
+                                            }`}>
+                                              Chart size: {entry.value.toFixed(1)}%
+                                            </p>
                                           </div>
                                         );
                                       }
@@ -929,63 +1065,41 @@ export default function App() {
 
                             {/* Legend */}
                             <div className="w-full mt-4 space-y-2">
-                              {chartData.map((item, index) => (
-                                <div key={index} className="flex items-center gap-2 text-sm">
-                                  <div
-                                    className="w-4 h-4 rounded-sm flex-shrink-0"
-                                    style={{ backgroundColor: item.color }}
-                                  ></div>
-                                  <span className={`${
-                                    theme === "dark" ? "text-white/80" : "text-gray-700"
-                                  }`}>
-                                    {item.name}
-                                  </span>
-                                </div>
-                              ))}
+                              {chartData.map((entry, index) => {
+                                const isRoomForImprovement = entry.name === "Room for Improvement";
+                                const pose = entry.poseData;
+
+                                return (
+                                  <div key={index} className="flex items-center gap-2 text-sm">
+                                    <div
+                                      className="w-4 h-4 rounded-sm flex-shrink-0"
+                                      style={{ backgroundColor: entry.color }}
+                                    ></div>
+                                    <span className={`flex-1 ${
+                                      theme === "dark" ? "text-white/80" : "text-gray-700"
+                                    }`}>
+                                      {entry.name}
+                                    </span>
+                                    {!isRoomForImprovement && pose && (pose.improvement_needed || (pose.score / pose.max_score) <= 0.5) && (
+                                      <span className={`text-xs ${
+                                        theme === "dark" ? "text-white/50" : "text-gray-400"
+                                      }`}>
+                                        Needs work
+                                      </span>
+                                    )}
+                                    {isRoomForImprovement && (
+                                      <span className={`text-xs ${
+                                        theme === "dark" ? "text-white/50" : "text-gray-400"
+                                      }`}>
+                                        {entry.actualScore} pts
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
-
-                          {/* Category Details List */}
-                          <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                            {resultsData?.categories.map((category, index) => (
-                              <div
-                                key={index}
-                                className={`
-                                  p-4 rounded-xl border-2
-                                  transition-all duration-200
-                                  hover:scale-[1.02]
-                                  ${theme === "dark"
-                                    ? "bg-white/5 border-white/10 hover:bg-white/10"
-                                    : "bg-white/80 border-blue-200/40 hover:bg-white"
-                                  }
-                                `}
-                              >
-                                <div className="flex items-center gap-2 mb-2">
-                                  <div
-                                    className="w-3 h-3 rounded-full flex-shrink-0"
-                                    style={{ backgroundColor: categoryColors[index % categoryColors.length] }}
-                                  ></div>
-                                  <span className={`font-semibold ${
-                                    theme === "dark" ? "text-white" : "text-gray-900"
-                                  }`}>
-                                    Category {index + 1}
-                                  </span>
-                                </div>
-                                <pre className={`text-xs whitespace-pre-wrap ${
-                                  theme === "dark" ? "text-white/70" : "text-gray-600"
-                                }`}>
-                                  {JSON.stringify(category, null, 2)}
-                                </pre>
-                              </div>
-                            ))}
-                          </div>
                         </div>
-
-                        <p className={`text-xs mt-4 text-center ${
-                          theme === "dark" ? "text-white/50" : "text-gray-500"
-                        }`}>
-                          Hover over pie chart sections to see detailed category information
-                        </p>
                       </div>
                     )}
                   </div>
