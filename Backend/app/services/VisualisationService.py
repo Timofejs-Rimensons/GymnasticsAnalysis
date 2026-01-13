@@ -88,8 +88,10 @@ def save_visualized_video(output_video_path, frames, input_video_path=None, pose
     else:
         video_capture = None
         fps, frame_width, frame_height = 30, 800, 800
+        
+    # output_video_path = str(output_video_path)
 
-    video_writer = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (frame_width, frame_height))
+    video_writer = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*"avc1"), fps, (frame_width, frame_height))
 
     for frame_index, frame_data in enumerate(frames):
         if is_overlay and video_capture.isOpened():
