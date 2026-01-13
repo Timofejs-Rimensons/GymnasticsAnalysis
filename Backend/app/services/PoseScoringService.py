@@ -19,7 +19,6 @@ class PoseScoringService:
         with open("config.json", 'r') as config_file:
             config = json.load(config_file)
             
-        self.exercises = config["exercises"]
         self.reference_json_path = config["model_in_use"]
         self.segmentation_repository = MediapipeSegmentationRepository()
         self.video_extensions = [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm"]

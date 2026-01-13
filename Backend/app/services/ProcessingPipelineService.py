@@ -4,10 +4,15 @@ import numpy as np
 from repositories.MediapipeSegmentationRepository import MediapipeSegmentationRepository
 from services.PoseScoringService import PoseScoringService
 from services.VisualisationService import save_visualized_video
+from services.PdfReportService import generate_pdf_report
 
 class ProcessingPipelineService:
     
     def __init__(self):
+        with open("config.json", 'r') as config_file:
+            config = json.load(config_file)
+            
+        self.improvement_needed_treshold = config.get("improvement_needed_treshold", 0)
         self.segmentation_repository = MediapipeSegmentationRepository()
         self.pose_scoring_service = PoseScoringService()
 
@@ -29,7 +34,7 @@ class ProcessingPipelineService:
             with open(status_json_path, 'w') as f:
                 json.dump({'status': status, 'progress': progress}, f)
 
-    def _structure_and_save_results(self, pose_scores_per_frame, output_json_path):
+    def _structure_and_save_results(self, pose_scores_per_frame, output_json_path, output_pdf_path):
         all_poses = {}
         for frame_scores in pose_scores_per_frame:
             for pose_name, data in frame_scores.items():
@@ -51,32 +56,36 @@ class ProcessingPipelineService:
         scores = list(pose_scores.values())
         if not scores:
             overall_score_raw = 0
-            mean_score = 0
-            std_dev = 0
             max_raw_score = 1
         else:
             overall_score_raw = sum(scores)
-            mean_score = np.mean(scores)
-            std_dev = np.std(scores)
             max_raw_score = len(pose_scores)
 
         target_max_score = 100.0
+        individual_pose_max_score = target_max_score / max_raw_score
         
         overall_score = (overall_score_raw / max_raw_score) * target_max_score if max_raw_score > 0 else 0
         percentage = overall_score 
 
         pose_categories = []
         for pose, score in pose_scores.items():
-            is_maxed = score >= mean_score - std_dev
-            improvement_needed = not is_maxed
+            improvement_needed = bool(score < self.improvement_needed_treshold)
             
             pose_categories.append({
                 "name": pose,
-                "score": round(score * 100),
-                "max_score": 100,
+                "score": round(score * individual_pose_max_score),
+                "max_score": round(individual_pose_max_score),
                 "description": "Placeholder description.",
                 "improvement_needed": improvement_needed
             })
+            
+        pose_categories.append({
+            "name": "Space for improvement",
+            "score": round(100 - overall_score),
+            "max_score": 100,
+            "description": "Placeholder description.",
+            "improvement_needed": bool(True)
+        })
 
         results = {
             "overall_score": round(overall_score),
@@ -89,6 +98,7 @@ class ProcessingPipelineService:
                 }
             ]
         }
+        generate_pdf_report(analysis=results, output_path=output_pdf_path)
 
         with open(output_json_path, 'w') as json_file:
             json.dump(results, json_file, indent=4)
@@ -100,11 +110,11 @@ class ProcessingPipelineService:
             with open(output_json_path, 'w') as json_file:
                 json.dump({}, json_file)
             with open(output_pdf_path, 'w') as pdf_file:
-                pass
+                generate_pdf_report(analysis={}, output_path=output_pdf_path)
             self._update_status(status_json_path, "completed", 1)
             return
         
-        self._structure_and_save_results(pose_scores_per_frame, output_json_path)
+        self._structure_and_save_results(pose_scores_per_frame, output_json_path, output_pdf_path)
 
         pose_labels = []
         for frame_scores in pose_scores_per_frame:
@@ -135,8 +145,5 @@ class ProcessingPipelineService:
             pose_labels.append(label)
 
         save_visualized_video(output_video_path, frames, input_video_path, pose_labels)
-
-        with open(output_pdf_path, 'w') as pdf_file:
-            pass
         
         self._update_status(status_json_path, "completed", 1)
