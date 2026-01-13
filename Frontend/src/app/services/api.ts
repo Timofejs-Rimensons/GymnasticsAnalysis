@@ -15,8 +15,17 @@ export interface ProcessRequest {
   exercise_name: string;
 }
 
+export interface Pose {
+  name: string;
+  score: number;
+  max_score: number;
+  description: string;
+  improvement_needed: boolean;
+}
+
 export interface CategoryScore {
-  // write when the json structure is known
+  name: string;
+  poses: Pose[];
 }
 
 export interface AnalysisResult {
@@ -135,7 +144,7 @@ export class ApiService {
   }
 
   static async getResponseJson(pid: string): Promise<AnalysisResult> {
-    const response = await fetch(`${API_BASE_URL}/download/reportjson/${pid}`);
+    const response = await fetch(`${API_BASE_URL}/download/json/${pid}`);
     if (!response.ok) {
       const error = await response
         .json()
@@ -151,6 +160,6 @@ export class ApiService {
   }
 
   static getReportPdfUrl(pid: string): string {
-    return `${API_BASE_URL}/download/reportpdf/${pid}`;
+    return `${API_BASE_URL}/download/pdf/${pid}`;
   }
 }
