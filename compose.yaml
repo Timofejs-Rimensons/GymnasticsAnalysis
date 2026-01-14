@@ -1,8 +1,10 @@
 services:
   backend:
     build: ./Backend
-    expose:
-      - 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - temp_data:/app/.temp
     healthcheck:
       test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8000' || exit 1"]
       interval: 10s
@@ -13,10 +15,13 @@ services:
     ports:
       - "8080:80"
     environment:
-      - VITE_API_BASE_URL=http://localhost:8000/api
+      - VITE_API_BASE_URL=/api
     depends_on:
       - backend
     healthcheck:
       test: ["CMD-SHELL", "--interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1"]
       interval: 10s
       timeout: 10s
+
+volumes:
+  temp_data:

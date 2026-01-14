@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+import subprocess
+import os
 
 
 def _draw_pose_on_frame(frame, frame_data, pose_label_text, is_overlay):
@@ -90,8 +92,13 @@ def save_visualized_video(output_video_path, frames, input_video_path=None, pose
         fps, frame_width, frame_height = 30, 800, 800
         
     # output_video_path = str(output_video_path)
-
-    video_writer = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*"avc1"), fps, (frame_width, frame_height))
+    
+    # We will write to a temp file first using 'mp4v' (which works in Docker),
+    # and then convert to 'h264' using ffmpeg cli (which works in Browsers).
+    temp_output_path = f"{output_video_path}_temp.mp4"
+    
+    # Use 'mp4v' as it is more compatible in some Docker environments than 'avc1'
+    video_writer = cv2.VideoWriter(temp_output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (frame_width, frame_height))
 
     for frame_index, frame_data in enumerate(frames):
         if is_overlay and video_capture.isOpened():
@@ -110,3 +117,25 @@ def save_visualized_video(output_video_path, frames, input_video_path=None, pose
     if video_capture:
         video_capture.release()
     video_writer.release()
+    
+    # Convert using FFMPEG to H.264 (avc1) for browser compatibility
+    try:
+        subprocess.run([
+            "ffmpeg", "-y", 
+            "-i", temp_output_path, 
+            "-vcodec", "libx264", 
+            "-pix_fmt", "yuv420p", # Essential for browser compatibility
+            "-acodec", "aac", 
+            output_video_path
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Remove temp file if successful
+        if os.path.exists(temp_output_path):
+            os.remove(temp_output_path)
+            
+    except subprocess.CalledProcessError:
+        # Fallback: if ffmpeg fails, just rename temp to output (better than nothing)
+        if os.path.exists(temp_output_path):
+            if os.path.exists(output_video_path):
+                os.remove(output_video_path)
+            os.rename(temp_output_path, output_video_path)
