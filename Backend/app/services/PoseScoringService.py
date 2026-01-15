@@ -41,41 +41,44 @@ class PoseScoringService:
         ]
 
     @staticmethod
-    def _calculate_similarity_score(frame_features, pose_mean, pose_std, segment_mask, feature_mask):
+    def _calculate_segment_similarity_scores(frame_features, pose_mean, pose_std, segment_mask, feature_mask):
         """
-        Calculates a similarity score between a frame's features and a reference pose.
-
-        The score is based on the Z-score distance between the frame's features
-        and the mean of the reference pose's features, normalized by the standard
-        deviation.
+        Calculates similarity scores for each body segment against a reference pose.
 
         Args:
             frame_features (np.ndarray): The feature tensor for a single frame.
             pose_mean (np.ndarray): The mean feature tensor of the reference pose.
             pose_std (np.ndarray): The standard deviation of the features of the
                                    reference pose.
-            segment_mask (list): A mask to select which body segments to include
-                                 in the score calculation.
+            segment_mask (list): A list of segment indices to score.
             feature_mask (list): A mask to select which features to include in
                                  the score calculation.
 
         Returns:
-            float: The similarity score, ranging from 0 to 1.
+            dict: A dictionary where keys are segment indices and values are the
+                  similarity scores for each segment.
         """
         frame_features = np.asarray(frame_features)
         pose_mean = np.asarray(pose_mean)
         pose_std = np.asarray(pose_std)
-        segment_mask = np.asarray(segment_mask)
         feature_mask = np.asarray(feature_mask)
+
+        if not segment_mask:
+            return {}
 
         relevant_features = frame_features[segment_mask][:, feature_mask]
         relevant_mean = pose_mean[segment_mask][:, feature_mask]
         relevant_std = pose_std[segment_mask][:, feature_mask]
         
         z_distance = (relevant_features - relevant_mean) / (relevant_std + 1e-8)
-        mean_absolute_z_distance = np.mean(np.abs(z_distance))
         
-        return float(np.exp(-mean_absolute_z_distance))
+        segment_scores = {}
+        for i, segment_index in enumerate(segment_mask):
+            mean_abs_z_dist = np.mean(np.abs(z_distance[i]))
+            score = float(np.exp(-mean_abs_z_dist))
+            segment_scores[int(segment_index)] = score
+
+        return segment_scores
 
     def fit(self, video_folder_path, pose_name, exercise_name, pose_config={}):
         """
@@ -140,20 +143,27 @@ class PoseScoringService:
         print(f"  - Successfully saved model for '{pose_name}' to '{self.reference_json_path}'.")
 
     def _calculate_pose_scores(self, current_frame_features, reference_data):
-        all_pose_scores = {}
+        all_pose_details = {}
         for pose_name, pose_data in reference_data.items():
             if "mean" in pose_data:
                 config = pose_data["config"]
                 segment_mask = config.get("segment_mask", list(range(len(pose_data["mean"]))))
                 feature_mask = config.get("feature_mask", [True, True, True])
-                score = self._calculate_similarity_score(
+
+                segment_scores = self._calculate_segment_similarity_scores(
                     current_frame_features,
                     pose_data["mean"],
                     pose_data["std"],
                     segment_mask,
                     feature_mask
                 )
-                all_pose_scores[pose_name] = score
+                
+                overall_score = np.mean(list(segment_scores.values())) if segment_scores else 0.0
+                
+                all_pose_details[pose_name] = {
+                    "score": overall_score,
+                    "segment_scores": segment_scores
+                }
 
         frame_scores_structured = {}
         for pose_name, pose_data in reference_data.items():
@@ -163,17 +173,27 @@ class PoseScoringService:
             config = pose_data["config"]
             if "sub_poses" in config:
                 sub_pose_names = config.get("sub_poses", [])
-                sub_scores = {name: all_pose_scores.get(name, 0.0) for name in sub_pose_names}
+                sub_scores = {name: all_pose_details.get(name, {}).get("score", 0.0) for name in sub_pose_names}
                 aggregated_score = np.mean(list(sub_scores.values())) if sub_scores else 0.0
+
+                # Aggregate segment scores from sub-poses
+                aggregated_segment_scores = {}
+                for name in sub_pose_names:
+                    sub_pose_details = all_pose_details.get(name, {})
+                    aggregated_segment_scores.update(sub_pose_details.get("segment_scores", {}))
+
                 frame_scores_structured[pose_name] = {
                     "score": aggregated_score,
-                    "sub_scores": sub_scores
+                    "sub_scores": sub_scores,
+                    "segment_scores": aggregated_segment_scores
                 }
             else:
-                score = all_pose_scores.get(pose_name, 0.0)
+                # This is a simple pose
+                details = all_pose_details.get(pose_name, {"score": 0.0, "segment_scores": {}})
                 frame_scores_structured[pose_name] = {
-                    "score": score,
-                    "sub_scores": {}
+                    "score": details["score"],
+                    "sub_scores": {},
+                    "segment_scores": details["segment_scores"]
                 }
         
         return frame_scores_structured

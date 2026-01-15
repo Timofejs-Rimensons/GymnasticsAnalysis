@@ -4,7 +4,7 @@ import subprocess
 import os
 
 
-def _draw_pose_on_frame(frame, frame_data, pose_label_text, is_overlay):
+def _draw_pose_on_frame(frame, frame_data, pose_label_text, is_overlay, segment_scores=None):
     """
     Draws a single pose and its labels on a video frame.
 
@@ -17,6 +17,8 @@ def _draw_pose_on_frame(frame, frame_data, pose_label_text, is_overlay):
         pose_label_text (str): The text of the label to be drawn on the frame.
         is_overlay (bool): A flag indicating whether to overlay on the original
                            frame or draw on a black background.
+        segment_scores (dict, optional): A dictionary of scores for each segment.
+                                         Defaults to None.
 
     Returns:
         np.ndarray: The frame with the pose and labels drawn on it.
@@ -43,9 +45,28 @@ def _draw_pose_on_frame(frame, frame_data, pose_label_text, is_overlay):
 
     for point in projected_points:
         cv2.circle(frame, tuple(point), 6, (0, 255, 0), -1)
+
     for start_idx, end_idx in connections:
+        color = (200, 200, 200)  # Default white
+        if segment_scores:
+            score1 = segment_scores.get(start_idx)
+            score2 = segment_scores.get(end_idx)
+
+            score = None
+            if score1 is not None and score2 is not None:
+                score = (score1 + score2) / 2.0
+            elif score1 is not None:
+                score = score1
+            elif score2 is not None:
+                score = score2
+            
+            if score is not None:
+                # BGR color: (blue, green, red)
+                # score 0 -> red (0, 0, 255), score 1 -> green (0, 255, 0)
+                color = (0, int(255 * score), int(255 * (1 - score)))
+
         cv2.line(frame, tuple(projected_points[start_idx]), tuple(projected_points[end_idx]),
-                 (200, 200, 200), 4)
+                 color, 4)
 
     if pose_label_text:
         origin = (50, 50)
@@ -60,7 +81,7 @@ def _draw_pose_on_frame(frame, frame_data, pose_label_text, is_overlay):
 
     return frame
 
-def save_visualized_video(output_video_path, frames, input_video_path=None, pose_labels=None):
+def save_visualized_video(output_video_path, frames, input_video_path=None, frame_annotations=None):
     """
     Creates and saves a video visualizing the detected poses.
 
@@ -76,9 +97,9 @@ def save_visualized_video(output_video_path, frames, input_video_path=None, pose
                                            If provided, the poses will be
                                            overlaid on this video.
                                            Defaults to None.
-        pose_labels (list, optional): A list of strings, where each string is a
-                                      label for the corresponding frame.
-                                      Defaults to None.
+        frame_annotations (list, optional): A list of dictionaries, each containing
+                                            'label' and 'segment_scores' for a frame.
+                                            Defaults to None.
     """
     is_overlay = input_video_path is not None
     
@@ -91,13 +112,8 @@ def save_visualized_video(output_video_path, frames, input_video_path=None, pose
         video_capture = None
         fps, frame_width, frame_height = 30, 800, 800
         
-    # output_video_path = str(output_video_path)
-    
-    # We will write to a temp file first using 'mp4v' (which works in Docker),
-    # and then convert to 'h264' using ffmpeg cli (which works in Browsers).
     temp_output_path = f"{output_video_path}_temp.mp4"
     
-    # Use 'mp4v' as it is more compatible in some Docker environments than 'avc1'
     video_writer = cv2.VideoWriter(temp_output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (frame_width, frame_height))
 
     for frame_index, frame_data in enumerate(frames):
@@ -108,9 +124,11 @@ def save_visualized_video(output_video_path, frames, input_video_path=None, pose
         else:
             frame = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
         
-        current_label = pose_labels[frame_index] if pose_labels and frame_index < len(pose_labels) else ""
+        annotation = frame_annotations[frame_index] if frame_annotations and frame_index < len(frame_annotations) else {}
+        current_label = annotation.get("label", "")
+        segment_scores = annotation.get("segment_scores")
         
-        drawn_frame = _draw_pose_on_frame(frame, frame_data, current_label, is_overlay)
+        drawn_frame = _draw_pose_on_frame(frame, frame_data, current_label, is_overlay, segment_scores)
         
         video_writer.write(drawn_frame)
 
