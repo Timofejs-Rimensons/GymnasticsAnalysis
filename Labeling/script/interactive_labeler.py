@@ -190,9 +190,22 @@ class InteractiveGymnasticsLabeler:
         self.video_name = os.path.basename(video_path)
         self.frames = []
         self.pose_sequence = []
-        prev_landmarks = None
         
-        print("Loading frames and detecting poses...")
+        # Reset labels for new video
+        self.manual_labels = {
+            'starting': -1,
+            'swing': -1,
+            'handstand': -1,
+            'landing': -1
+        }
+        self.auto_labels = {
+            'starting': -1,
+            'swing': -1,
+            'handstand': -1,
+            'landing': -1
+        }
+        
+        print("Loading frames...")
         frame_count = 0
         
         while cap.isOpened():
@@ -202,15 +215,12 @@ class InteractiveGymnasticsLabeler:
             
             self.frames.append(frame.copy())
             
-            # Process with MediaPipe
+            # Process with MediaPipe for skeleton overlay only
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self.pose.process(rgb_frame)
             
             if results.pose_landmarks:
-                landmarks = results.pose_landmarks.landmark
-                pose_label = self.classify_pose(landmarks, prev_landmarks)
-                self.pose_sequence.append((pose_label, results.pose_landmarks))
-                prev_landmarks = landmarks
+                self.pose_sequence.append((None, results.pose_landmarks))
             else:
                 self.pose_sequence.append((None, None))
             
@@ -222,13 +232,7 @@ class InteractiveGymnasticsLabeler:
         self.total_frames = len(self.frames)
         
         print(f"✓ Loaded {self.total_frames} frames")
-        
-        # Auto-detect transitions
-        self._detect_transitions()
-        
-        print(f"\nAuto-detected transitions:")
-        for pose_name, frame_idx in self.auto_labels.items():
-            print(f"  {pose_name.capitalize()}: Frame {frame_idx}")
+        print(f"\nReady to label - use keys 1-4 to mark poses")
         
         return True
     
@@ -266,10 +270,8 @@ class InteractiveGymnasticsLabeler:
             pos_x = int(10 + (width - 20) * (self.current_frame_idx / self.total_frames))
             cv2.line(frame, (pos_x, bar_y), (pos_x, bar_y + bar_height), (255, 255, 255), 2)
         
-        # Draw pose markers
-        labels_to_show = self.manual_labels if any(v != -1 for v in self.manual_labels.values()) else self.auto_labels
-        
-        for pose_name, frame_idx in labels_to_show.items():
+        # Draw manual pose markers only
+        for pose_name, frame_idx in self.manual_labels.items():
             if frame_idx >= 0 and self.total_frames > 0:
                 marker_x = int(10 + (width - 20) * (frame_idx / self.total_frames))
                 color = self.POSE_COLORS[pose_name]
@@ -277,14 +279,14 @@ class InteractiveGymnasticsLabeler:
                 cv2.circle(frame, (marker_x, bar_y + bar_height // 2), 8, (255, 255, 255), 1)
         
         # Legend
-        legend_y = timeline_y + 35
+        legend_y = timeline_y + 38
         legend_x = 10
         for i, pose_name in enumerate(self.POSE_NAMES):
             color = self.POSE_COLORS[pose_name]
             cv2.circle(frame, (legend_x, legend_y), 5, color, -1)
-            cv2.putText(frame, f"{i+1}:{pose_name[:3]}", (legend_x + 10, legend_y + 5),
+            cv2.putText(frame, f"{i+1}:{pose_name}", (legend_x + 12, legend_y + 5),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-            legend_x += 90
+            legend_x += 120
     
     def draw_info(self, frame):
         """Draw info overlay on frame"""
@@ -295,23 +297,13 @@ class InteractiveGymnasticsLabeler:
         cv2.putText(frame, f"Frame: {self.current_frame_idx + 1}/{self.total_frames}", 
                    (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         
-        # Current pose from auto-detection
-        if self.show_auto_detection and self.current_frame_idx < len(self.pose_sequence):
-            pose_label, _ = self.pose_sequence[self.current_frame_idx]
-            if pose_label is not None:
-                pose_name = self.POSE_NAMES[pose_label]
-                color = self.POSE_COLORS[pose_name]
-                cv2.putText(frame, f"Detected: {pose_name.upper()}", (10, info_y + 35),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-        
         # Current labels
         labels_y = height - 150
         cv2.putText(frame, "Current Labels:", (10, labels_y),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
         
-        labels_to_show = self.manual_labels if any(v != -1 for v in self.manual_labels.values()) else self.auto_labels
-        
-        for i, (pose_name, frame_idx) in enumerate(labels_to_show.items()):
+        # Show manual labels only
+        for i, (pose_name, frame_idx) in enumerate(self.manual_labels.items()):
             y_pos = labels_y + 20 + (i * 20)
             color = self.POSE_COLORS[pose_name]
             text = f"{i+1}. {pose_name.capitalize()}: "
@@ -321,7 +313,7 @@ class InteractiveGymnasticsLabeler:
         # Controls help
         help_text = [
             "SPACE: Play/Pause | ARROWS: Step | 1-4: Mark poses",
-            "S: Save | R: Reset | A: Toggle auto | Q: Quit"
+            "S: Save | N: Next video | R: Reset | Q: Quit"
         ]
         help_y = height - 90
         for i, text in enumerate(help_text):
@@ -374,14 +366,13 @@ class InteractiveGymnasticsLabeler:
     
     def save_labels(self, output_path: str):
         """Save labels to CSV"""
-        labels_to_save = self.manual_labels if any(v != -1 for v in self.manual_labels.values()) else self.auto_labels
-        
+        # Always use manual labels
         data = {
             'videoname': self.video_name,
-            'starting': labels_to_save['starting'],
-            'swing': labels_to_save['swing'],
-            'handstand': labels_to_save['handstand'],
-            'landing': labels_to_save['landing']
+            'starting': self.manual_labels['starting'],
+            'swing': self.manual_labels['swing'],
+            'handstand': self.manual_labels['handstand'],
+            'landing': self.manual_labels['landing']
         }
         
         # Check if file exists
@@ -393,16 +384,20 @@ class InteractiveGymnasticsLabeler:
         print(f"\n✓ Labels saved to {output_path}")
         print(f"  {data}")
     
-    def run(self, video_path: str, output_csv: str = None):
+    def run(self, video_path: str, output_csv: str = None, batch_mode: bool = False):
         """
         Run interactive labeling session
         
         Args:
             video_path: Path to video file
             output_csv: Optional CSV output path
+            batch_mode: If True, enables next video workflow
+            
+        Returns:
+            'next' to continue to next video, 'quit' to stop, None otherwise
         """
         if not self.load_video(video_path):
-            return
+            return 'quit'
         
         if output_csv is None:
             output_csv = "pose_labels.csv"
@@ -421,10 +416,13 @@ class InteractiveGymnasticsLabeler:
         print("  3:           Mark Handstand pose")
         print("  4:           Mark Landing pose")
         print("  S:           Save labels to CSV")
+        if batch_mode:
+            print("  N:           Save and go to Next video")
         print("  R:           Reset all labels")
-        print("  A:           Toggle auto-detection overlay")
         print("  Q/ESC:       Quit (with save prompt)")
         print(f"{'='*60}\n")
+        
+        saved_this_session = False
         
         while True:
             display_frame = self.get_display_frame()
@@ -463,19 +461,35 @@ class InteractiveGymnasticsLabeler:
                 
             elif key == ord('s') or key == ord('S'):  # Save
                 self.save_labels(output_csv)
+                saved_this_session = True
+                if batch_mode:
+                    print("\n💡 Press 'N' for next video, or continue editing")
+                
+            elif key == ord('n') or key == ord('N'):  # Next video (batch mode)
+                if batch_mode:
+                    if not saved_this_session:
+                        print("\n⚠️  Saving labels before moving to next video...")
+                        self.save_labels(output_csv)
+                    print("\n→ Moving to next video...")
+                    cv2.destroyAllWindows()
+                    return 'next'
+                else:
+                    print("\n'N' key only works in batch mode")
                 
             elif key == ord('r') or key == ord('R'):  # Reset
                 self.reset_labels()
                 
-            elif key == ord('a') or key == ord('A'):  # Toggle auto-detection
-                self.show_auto_detection = not self.show_auto_detection
-                print(f"Auto-detection overlay: {'ON' if self.show_auto_detection else 'OFF'}")
-                
             elif key == ord('q') or key == ord('Q') or key == 27:  # Quit
-                response = input("\nSave labels before quitting? (y/n): ").strip().lower()
-                if response == 'y':
-                    self.save_labels(output_csv)
-                break
+                if batch_mode:
+                    response = input("\nSave current video before quitting? (y/n): ").strip().lower()
+                    if response == 'y':
+                        self.save_labels(output_csv)
+                else:
+                    response = input("\nSave labels before quitting? (y/n): ").strip().lower()
+                    if response == 'y':
+                        self.save_labels(output_csv)
+                cv2.destroyAllWindows()
+                return 'quit'
             
             # Auto-advance frame when playing
             if self.playing:
@@ -486,6 +500,7 @@ class InteractiveGymnasticsLabeler:
                     print("Reached end of video")
         
         cv2.destroyAllWindows()
+        return None
 
 
 def batch_label_videos(video_directory: str, output_csv: str = "pose_labels.csv"):
@@ -521,16 +536,17 @@ def batch_label_videos(video_directory: str, output_csv: str = "pose_labels.csv"
     
     for i, video_path in enumerate(video_files):
         print(f"\n{'='*60}")
-        print(f"Video {i+1}/{len(video_files)}")
+        print(f"Video {i+1}/{len(video_files)}: {video_path.name}")
         print(f"{'='*60}")
         
-        labeler.run(str(video_path), output_csv)
+        result = labeler.run(str(video_path), output_csv, batch_mode=True)
         
-        if i < len(video_files) - 1:
-            response = input("\nContinue to next video? (y/n): ").strip().lower()
-            if response != 'y':
-                print("Batch labeling stopped by user")
-                break
+        if result == 'quit':
+            print("\nBatch labeling stopped by user")
+            break
+        elif result == 'next':
+            # Continue to next video
+            continue
     
     print(f"\n{'='*60}")
     print("BATCH LABELING COMPLETE")
