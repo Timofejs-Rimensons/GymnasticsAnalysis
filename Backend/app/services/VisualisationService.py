@@ -46,24 +46,27 @@ def _draw_pose_on_frame(frame, frame_data, pose_label_text, is_overlay, segment_
     for point in projected_points:
         cv2.circle(frame, tuple(point), 6, (0, 255, 0), -1)
 
+    body_segments_map = {
+        (1, 3): 0, (3, 5): 1, (2, 4): 2, (4, 6): 3, (7, 9): 4,
+        (9, 11): 5, (8, 10): 6, (10, 12): 7, (1, 2): 8, (7, 8): 9
+    }
+
     for start_idx, end_idx in connections:
         color = (200, 200, 200)  # Default white
         if segment_scores:
-            score1 = segment_scores.get(start_idx)
-            score2 = segment_scores.get(end_idx)
+            # The order of indices in the tuple might matter
+            segment_tuple = (start_idx, end_idx)
+            if segment_tuple not in body_segments_map:
+                segment_tuple = (end_idx, start_idx) # Try reversed
 
-            score = None
-            if score1 is not None and score2 is not None:
-                score = (score1 + score2) / 2.0
-            elif score1 is not None:
-                score = score1
-            elif score2 is not None:
-                score = score2
+            segment_index = body_segments_map.get(segment_tuple)
             
-            if score is not None:
-                # BGR color: (blue, green, red)
-                # score 0 -> red (0, 0, 255), score 1 -> green (0, 255, 0)
-                color = (0, int(255 * score), int(255 * (1 - score)))
+            if segment_index is not None:
+                score = segment_scores.get(segment_index)
+                if score is not None:
+                    # BGR color: (blue, green, red)
+                    # score 0 -> red (0, 0, 255), score 1 -> green (0, 255, 0)
+                    color = (0, int(255 * score), int(255 * (1 - score)))
 
         cv2.line(frame, tuple(projected_points[start_idx]), tuple(projected_points[end_idx]),
                  color, 4)

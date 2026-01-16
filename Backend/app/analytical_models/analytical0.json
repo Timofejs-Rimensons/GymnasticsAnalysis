@@ -352,8 +352,8 @@
         "swing": {
             "config": {
                 "sub_poses": [
-                    "swing_back",
-                    "swing_arms"
+                    "Back alignment",
+                    "Arms position"
                 ]
             }
         },
