@@ -123,34 +123,25 @@ class ProcessingPipelineService:
         
         self._structure_and_save_results(pose_scores_per_frame, output_json_path, output_pdf_path)
 
-        pose_labels = []
+        frame_annotations = []
         for frame_scores in pose_scores_per_frame:
-            def get_score(item):
-                if isinstance(item[1], dict):
-                    return item[1].get("score", 0)
-                return 0
-
-            sorted_poses = sorted(frame_scores.items(), key=get_score, reverse=True)
+            top_pose_name = frame_scores.get('phase')
+            annotation = {"label": "None", "segment_scores": None}
             
-            if not sorted_poses:
-                pose_labels.append("None")
-                continue
+            if top_pose_name and top_pose_name != "no_pose":
+                top_pose_data = frame_scores.get(top_pose_name)
+                if top_pose_data:
+                    label = f"{top_pose_name}: {top_pose_data.get('score', 0):.2f}"
+                    
+                    sub_scores = top_pose_data.get('sub_scores')
+                    if sub_scores:
+                        label += " | " + " | ".join([f"{name}: {score:.2f}" for name, score in sub_scores.items()])
+                    
+                    annotation["label"] = label
+                    annotation["segment_scores"] = top_pose_data.get("segment_scores")
 
-            best_pose = sorted_poses[0]
-            
-            if not isinstance(best_pose[1], dict) or 'score' not in best_pose[1]:
-                 pose_labels.append("None")
-                 continue
+            frame_annotations.append(annotation)
 
-            data = best_pose[1]
-            label = ""
-            label += f"{best_pose[0]}: {data['score']:.2f}"
-            if data.get('sub_scores'):
-                label += " | "
-                label += " | ".join([f"{sub_pose}: {sub_score:.2f}" for sub_pose, sub_score in data['sub_scores'].items()])
-            label += "\n"
-            pose_labels.append(label)
-
-        save_visualized_video(output_video_path, frames, input_video_path, pose_labels)
+        save_visualized_video(output_video_path, frames, input_video_path, frame_annotations=frame_annotations)
         
         self._update_status(status_json_path, "completed", 1)
