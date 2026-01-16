@@ -181,10 +181,8 @@ cython_debug/
 .vscode/
 
 # Output files
-*.csv
 *.xlsx
 *.json
 test_labels.csv
 auto_labels.csv
-pose_labels.csv
 gymnastics_labels.csv
