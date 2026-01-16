@@ -1,6 +1,6 @@
 {
     "handstand": {
-        "starting": {
+        "Starting": {
             "mean": [
                 [
                     0.44711470798639924,
@@ -107,7 +107,7 @@
             ],
             "config": {}
         },
-        "swing_arms": {
+        "Arms position": {
             "mean": [
                 [
                     0.5269383074894276,
@@ -227,7 +227,7 @@
                 ]
             }
         },
-        "swing_back": {
+        "Back alignment": {
             "mean": [
                 [
                     0.5269383074894276,
@@ -335,10 +335,12 @@
             "config": {
                 "is_sub_pose": true,
                 "segment_mask": [
-                    1,
+                    4,
+                    5,
+                    6,
                     7,
-                    2,
-                    8
+                    8,
+                    9
                 ],
                 "feature_mask": [
                     false,
@@ -355,7 +357,7 @@
                 ]
             }
         },
-        "landing": {
+        "Landing": {
             "mean": [
                 [
                     -0.7785570500506912,
