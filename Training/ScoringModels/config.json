@@ -1,0 +1,28 @@
+{
+    "improvement_needed_treshold": 0.2,
+    "models": {
+        "handstand": {
+            "model_rel_path": "./model_weights/gruClassifier7821.pth",
+            "poses": {
+                "Starting": {
+                    "model_rel_path": "./model_weights/gruClassifier7821.pth",
+                    "sub_poses": {}
+                },
+                "Swing": {
+                    "model_rel_path": "./model_weights/gruClassifier7821.pth",
+                    "sub_poses": {}
+                },
+                "Handstand": {
+                    "model_rel_path": "./model_weights/gruClassifier7821.pth",
+                    "sub_poses": {
+                        "Back Position": {"segment_mask": [7, 8, 9]}, 
+                        "Arms Position": {"segment_mask": [1, 2, 3, 4]}}
+                },
+                "Landing": {
+                    "model_rel_path": "./model_weights/gruClassifier7821.pth",
+                    "sub_poses": {}
+                }
+            }
+        }
+    }
+}

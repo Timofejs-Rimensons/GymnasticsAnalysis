@@ -5,13 +5,15 @@ from repositories.MediapipeSegmentationRepository import MediapipeSegmentationRe
 from services.PoseScoringService import PoseScoringService
 from services.VisualisationService import save_visualized_video
 from services.PdfReportService import generate_pdf_report
+from ScoringModels.services.ModelService import ModelService
 
 class ProcessingPipelineService:
     
     def __init__(self):
         with open("config.json", 'r') as config_file:
             config = json.load(config_file)
-            
+        
+        self.models = config.get("models", {})
         self.improvement_needed_treshold = config.get("improvement_needed_treshold", 0)
         self.segmentation_repository = MediapipeSegmentationRepository()
         self.pose_scoring_service = PoseScoringService()
@@ -111,7 +113,7 @@ class ProcessingPipelineService:
         output_json_path = str(output_json_path)
         status_json_path = str(status_json_path)
         
-        pose_scores_per_frame, frames = self.pose_scoring_service.get_poses_from_video(input_video_path, exercise_name)
+        classifier = PoseClassifier(num_classes=4, window_size=24, model_path='./model_weights/gruClassifier7821.pth')
         
         if not pose_scores_per_frame:
             with open(output_json_path, 'w') as json_file:

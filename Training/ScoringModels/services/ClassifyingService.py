@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from models.PoseGRUModel import PoseGRUModel
 
-class PoseClassifier:
+class ClassifyingService:
     """
     Per-frame classifier using sliding windows with PoseGRUModel.
     Each frame gets a prediction based on its surrounding context window.
@@ -18,14 +18,15 @@ class PoseClassifier:
     
     def __init__(
         self,
-        num_classes,
-        window_size=30,          # Observation window size
-        stride=1,                # Stride for sliding window (1 = per-frame)
+        num_classes=None,
+        input_size = None,
+        window_size=30,
+        stride=1,
         hidden_size=128,
         num_layers=2,
         dropout=0.3,
         learning_rate=1e-3,
-        batch_size=32,           # Number of windows per batch
+        batch_size=32,
         epochs=100,
         patience=10,
         device=None,
@@ -36,9 +37,10 @@ class PoseClassifier:
         model_path=None,
         use_joint_attention=True,
         use_temporal_attention=True,
-        padding_mode='edge'     # How to pad sequences: 'edge', 'reflect', or 'zero'
+        padding_mode='edge'
     ):
         self.num_classes = num_classes
+        self.input_size = input_size
         self.window_size = window_size
         self.stride = stride
         self.hidden_size = hidden_size
@@ -49,7 +51,10 @@ class PoseClassifier:
         self.epochs = epochs
         self.patience = patience
         self.verbose = verbose
-        self.class_names = class_names or [f'Class_{i}' for i in range(num_classes)]
+        if num_classes:
+            self.class_names = class_names or [f'Class_{i}' for i in range(num_classes)]
+        else:
+            self.class_names = class_names
         self.augment = augment
         self.augment_scale_range = augment_scale_range
         self.use_joint_attention = use_joint_attention
@@ -61,16 +66,26 @@ class PoseClassifier:
         )
         
         if model_path:
-            self.model = torch.load(model_path, map_location=self.device)
+            self.model = torch.load(model_path, weights_only=False)
             self.model.eval()
         else:
             self.model = None
         
-        self.input_size = None
         self.history = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
+
+    def set_model(self, model):
+        """Sets the model for the service."""
+        self.model = model.to(self.device)
+
+    def set_hyperparameters(self, **kwargs):
+        """Sets hyperparameters for the service."""
+        for key, value in kwargs.items():
+            setattr(self, key, value)
     
     def _build_model(self, input_size):
         self.input_size = input_size
+        if self.num_classes is None:
+            raise ValueError("num_classes must be set before building the model.")
         self.model = PoseGRUModel(
             num_joint_features=input_size,
             hidden_size=self.hidden_size,
@@ -536,7 +551,7 @@ class PoseClassifier:
         """Save the model to disk."""
         if self.model is None:
             raise RuntimeError("No model to save. Train a model first.")
-        torch.save(self.model.state_dict(), path)
+        torch.save(self.model, path)
         if self.verbose:
             print(f"Model saved to {path}")
     
@@ -546,7 +561,7 @@ class PoseClassifier:
             if self.input_size is None:
                 raise RuntimeError("Cannot load model without knowing input size. Train a model first or specify input_size.")
             self._build_model(self.input_size)
-        self.model.load_state_dict(torch.load(path, map_location=self.device))
+        self.model = torch.load(path, map_location=self.device, weights_only=False)
         self.model.eval()
         if self.verbose:
             print(f"Model loaded from {path}")
