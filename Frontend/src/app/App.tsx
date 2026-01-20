@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { Upload, Download, Video, Sun, Moon, HelpCircle, ArrowLeft, CheckCircle, XCircle, Loader, ChevronDown, AlertCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./components/ui/dialog";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { ApiService, StatusResponse, AnalysisResult, Pose } from "./services/api";
 
 // Handstand SVG Icon Component
@@ -19,7 +19,7 @@ const HandstandIcon = ({ className }: { className?: string }) => (
 interface VideoUpload {
   id: string;
   file: File;
-  uploadedUrl: string; // Local blob URL for preview
+  uploadedUrl: string;
   status: StatusResponse;
   analysisResults?: AnalysisResult;
 }
@@ -33,20 +33,19 @@ export default function App() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [showVideoSelector, setShowVideoSelector] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const selectedVideo = videos.find(v => v.id === selectedVideoId);
   const resultsData = selectedVideo?.analysisResults;
 
-  // Pie chart colors
+  // Monochromatic chart colors with accent
   const poseColors = theme === "dark"
-    ? ["#a78bfa", "#818cf8", "#60a5fa", "#34d399", "#fbbf24", "#f472b6", "#fb923c"]
-    : ["#7c3aed", "#4f46e5", "#2563eb", "#059669", "#d97706", "#db2777", "#ea580c"];
+    ? ["#00b4d8", "#f2f2f2", "#999999", "#666666", "#404040", "#cccccc", "#808080"]
+    : ["#00b4d8", "#1a1a1a", "#666666", "#999999", "#cccccc", "#404040", "#808080"];
 
   // Flatten all poses from all categories for display
   const allPoses: (Pose & { color: string })[] = resultsData?.categories
     ? resultsData.categories.flatMap((category) =>
         category.poses.map((pose, poseIndex) => {
-          // Calculate global pose index for color assignment
           const globalIndex = resultsData.categories
             .slice(0, resultsData.categories.indexOf(category))
             .reduce((sum, cat) => sum + cat.poses.length, 0) + poseIndex;
@@ -78,14 +77,13 @@ export default function App() {
       poseData: pose,
       color: pose.color
     })),
-    // Add "Room for Improvement" category
     {
       name: "Room for Improvement",
       value: percentagePerCategory,
       actualScore: roomForImprovement,
       maxScore: totalMaxScore,
       poseData: null,
-      color: theme === "dark" ? "#64748b" : "#94a3b8"
+      color: theme === "dark" ? "#333333" : "#e5e5e5"
     }
   ];
 
@@ -97,19 +95,14 @@ export default function App() {
     setSelectedOption(option);
   };
 
-  /**
-   * Poll status and fetch results when completed
-   */
   const pollVideoStatus = async (videoId: string) => {
     try {
       const status = await ApiService.pollUntilComplete(videoId, 2000);
 
-      // Update status to completed
       setVideos(prev => prev.map(v =>
         v.id === videoId ? { ...v, status } : v
       ));
 
-      // Fetch analysis results from backend
       if (status.status === "completed") {
         try {
           const analysisResults = await ApiService.getResponseJson(videoId);
@@ -122,7 +115,6 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error polling status for video:", videoId, error);
-      // On error, mark as failed
       setVideos(prev => prev.map(v =>
         v.id === videoId ? {
           ...v,
@@ -136,9 +128,6 @@ export default function App() {
     }
   };
 
-  /**
-   * Handle file selection from input
-   */
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -147,7 +136,6 @@ export default function App() {
       const file = files[i];
       if (file && file.type.startsWith("video/")) {
         try {
-          // Step 1: Upload video and get process ID
           const uploadResponse = await ApiService.uploadVideo(file);
           const videoId = uploadResponse.pid;
 
@@ -163,17 +151,13 @@ export default function App() {
 
           setVideos(prev => {
             const updated = [...prev, newVideo];
-            // Set as selected if it's the first video
             if (prev.length === 0) {
               setSelectedVideoId(videoId);
             }
             return updated;
           });
 
-          // Step 2: Start processing with selected exercise type
           await ApiService.startProcessing(videoId, selectedOption || "handstand");
-
-          // Step 3: Start polling for status
           pollVideoStatus(videoId);
         } catch (error) {
           console.error("Error uploading video:", error);
@@ -183,9 +167,6 @@ export default function App() {
     }
   };
 
-  /**
-   * Handle drag and drop events
-   */
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(true);
@@ -207,7 +188,6 @@ export default function App() {
       const file = files[i];
       if (file && file.type.startsWith("video/")) {
         try {
-          // Step 1: Upload video and get process ID
           const uploadResponse = await ApiService.uploadVideo(file);
           const videoId = uploadResponse.pid;
 
@@ -229,10 +209,7 @@ export default function App() {
             return updated;
           });
 
-          // Step 2: Start processing with selected exercise type
           await ApiService.startProcessing(videoId, selectedOption || "handstand");
-
-          // Step 3: Start polling for status
           pollVideoStatus(videoId);
         } catch (error) {
           console.error("Error uploading video:", error);
@@ -246,9 +223,6 @@ export default function App() {
     fileInputRef.current?.click();
   };
 
-  /**
-   * Download processed video from backend
-   */
   const handleSaveVideo = () => {
     if (!selectedVideoId) return;
 
@@ -261,9 +235,6 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  /**
-   * Download report from backend
-   */
   const handleSaveReport = (format: "pdf" | "json") => {
     if (!selectedVideoId) return;
 
@@ -276,7 +247,6 @@ export default function App() {
       link.click();
       document.body.removeChild(link);
     } else if (format === "json") {
-      // JSON is already fetched, download it as a file
       if (resultsData) {
         const dataStr = JSON.stringify(resultsData, null, 2);
         const dataBlob = new Blob([dataStr], { type: "application/json" });
@@ -292,19 +262,16 @@ export default function App() {
     }
   };
 
-  /**
-   * UI Helper Functions
-   */
   const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
-        return theme === "dark" ? "text-green-400" : "text-green-600";
+        return "text-[#00b4d8]";
       case "failed":
         return theme === "dark" ? "text-red-400" : "text-red-600";
       case "processing":
-        return theme === "dark" ? "text-blue-400" : "text-blue-600";
+        return theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]";
       default:
-        return theme === "dark" ? "text-gray-400" : "text-gray-600";
+        return theme === "dark" ? "text-[#999999]" : "text-[#666666]";
     }
   };
 
@@ -324,191 +291,186 @@ export default function App() {
   const hasCompletedVideos = videos.some(v => v.status.status === "completed");
 
   return (
-    <div className={`min-h-screen relative overflow-hidden font-['Inter',sans-serif] transition-colors duration-500 ${
-      theme === "dark" ? "bg-[#0a0a1a]" : "bg-white"
-    }`}>
-      {/* Animated background orbs */}
-      {theme === "dark" ? (
-        <>
-          <div className="absolute top-20 left-20 w-96 h-96 bg-purple-600/30 rounded-full blur-[120px] animate-pulse"></div>
-          <div className="absolute bottom-20 right-20 w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '1s' }}></div>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[150px]"></div>
-        </>
-      ) : (
-        <>
-          <div className="absolute top-20 left-20 w-96 h-96 bg-blue-400/20 rounded-full blur-[120px] animate-pulse"></div>
-          <div className="absolute bottom-20 right-20 w-[500px] h-[500px] bg-cyan-400/15 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '1s' }}></div>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-sky-400/10 rounded-full blur-[150px]"></div>
-        </>
-      )}
+    <div className={`min-h-screen relative transition-colors duration-300 ${theme === "dark" ? "dark bg-[#141414]" : "bg-[#fafafa]"}`}>
+      {/* Subtle grid background */}
+      <div
+        className="absolute inset-0 pointer-events-none opacity-[0.03]"
+        style={{
+          backgroundImage: theme === "dark"
+            ? 'linear-gradient(90deg, #f2f2f2 1px, transparent 1px), linear-gradient(#f2f2f2 1px, transparent 1px)'
+            : 'linear-gradient(90deg, #1a1a1a 1px, transparent 1px), linear-gradient(#1a1a1a 1px, transparent 1px)',
+          backgroundSize: '40px 40px'
+        }}
+      />
 
       {/* Theme Toggle Button */}
       <button
         onClick={toggleTheme}
-        className={`fixed top-8 right-8 z-50 p-4 rounded-2xl backdrop-blur-xl transition-all duration-300 hover:scale-110 shadow-2xl ${
-          theme === "dark"
-            ? "bg-white/10 border border-white/20 hover:bg-white/20"
-            : "bg-blue-500/10 border border-blue-500/30 hover:bg-blue-500/20"
-        }`}
+        className={`
+          fixed top-6 right-6 z-50 p-3
+          border-2 transition-all duration-200
+          hover:-translate-y-0.5
+          ${theme === "dark"
+            ? "bg-[#1a1a1a] border-[#404040] hover:border-[#00b4d8]"
+            : "bg-white border-[#d4d4d4] hover:border-[#00b4d8]"
+          }
+        `}
       >
         {theme === "dark" ? (
-          <Sun className="w-6 h-6 text-yellow-300" />
+          <Sun className="w-5 h-5 text-[#f2f2f2]" />
         ) : (
-          <Moon className="w-6 h-6 text-blue-600" />
+          <Moon className="w-5 h-5 text-[#1a1a1a]" />
         )}
       </button>
 
       {/* Main Content */}
-      <div className="relative z-10 container mx-auto px-6 py-16 max-w-4xl">
+      <div className="relative z-10 container mx-auto px-6 py-12 max-w-5xl">
         {/* Option Selection Screen */}
         {selectedOption === null ? (
           <>
             {/* Header */}
-            <div className="text-center mb-16">
-              <div className="flex items-center justify-center gap-3 mb-4">
-                <div className={`p-3 rounded-2xl backdrop-blur-xl border shadow-2xl ${
-                  theme === "dark"
-                    ? "bg-white/10 border-white/20"
-                    : "bg-blue-500/10 border-blue-500/20"
-                }`}>
-                  <Video className={`w-8 h-8 ${theme === "dark" ? "text-white" : "text-blue-600"}`} />
+            <header className="mb-16">
+              <div className="flex items-center gap-4 mb-6">
+                <div className={`p-3 border-2 ${theme === "dark" ? "border-[#00b4d8] bg-[#00b4d8]/10" : "border-[#00b4d8] bg-[#00b4d8]/5"}`}>
+                  <Video className="w-8 h-8 text-[#00b4d8]" />
                 </div>
+                <div className={`h-[2px] flex-1 ${theme === "dark" ? "bg-[#404040]" : "bg-[#d4d4d4]"}`} />
               </div>
-              <h1 className={`text-5xl font-semibold mb-3 tracking-tight ${
-                theme === "dark" ? "text-white" : "text-gray-900"
-              }`}>
-                Video Processor
+
+              <h1 className={`text-4xl md:text-5xl font-black tracking-tight mb-4 ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}
+                style={{ fontFamily: "'Archivo Black', sans-serif" }}>
+                GYMNASTICS<br />ANALYSIS
               </h1>
-              <p className={`text-lg mb-5 ${theme === "dark" ? "text-white/60" : "text-gray-600"}`}>
-                Transform your videos with cutting-edge processing
+
+              <p className={`text-lg mb-6 max-w-md ${theme === "dark" ? "text-[#999999]" : "text-[#666666]"}`}
+                style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                AI-powered movement analysis for gymnastics training
               </p>
-              
+
               {/* How to Use Button */}
               <button
                 onClick={() => setShowInstructions(true)}
                 className={`
                   inline-flex items-center gap-2 px-6 py-3
-                  backdrop-blur-xl border rounded-full
-                  transition-all duration-200
-                  hover:scale-105
-                  shadow-lg hover:shadow-xl
+                  border-2 transition-all duration-200
+                  hover:-translate-y-0.5
                   ${theme === "dark"
-                    ? "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/30"
-                    : "bg-blue-500/10 border-blue-500/30 text-gray-900 hover:bg-blue-500/20 hover:border-blue-500/50"
+                    ? "bg-transparent border-[#404040] text-[#f2f2f2] hover:border-[#00b4d8]"
+                    : "bg-transparent border-[#d4d4d4] text-[#1a1a1a] hover:border-[#00b4d8]"
                   }
                 `}
               >
-                <HelpCircle className="w-5 h-5" />
-                <span className="font-medium">How to Use</span>
+                <HelpCircle className="w-4 h-4" />
+                <span className="text-sm font-bold uppercase tracking-wider">How to Use</span>
               </button>
-            </div>
+            </header>
 
-            {/* Option Tiles */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
-              {/* Handstand Option */}
-              <button
-                onClick={() => handleOptionSelect("handstand")}
-                className={`
-                  group relative
-                  backdrop-blur-2xl
-                  border-2 rounded-3xl
-                  p-12 transition-all duration-300
-                  shadow-[0_8px_32px_0_rgba(0,0,0,0.37)]
-                  hover:scale-[1.02]
-                  ${theme === "dark"
-                    ? "bg-white/5 border-white/20 hover:bg-white/10 hover:border-purple-400/40"
-                    : "bg-blue-50/50 border-blue-200/40 hover:bg-blue-100/60 hover:border-blue-400/60"
-                  }
-                `}
-              >
-                <div className="flex justify-center mb-8">
-                  <div className={`
-                    p-6 rounded-2xl border-2 transition-all duration-300
-                    ${theme === "dark"
-                      ? "bg-white/10 border-white/20 group-hover:bg-purple-500/20 group-hover:border-purple-400/40"
-                      : "bg-white/60 border-blue-200/40 group-hover:bg-blue-500/20 group-hover:border-blue-500/40"
-                    }
-                  `}>
-                    <HandstandIcon className={`w-12 h-12 ${
-                      theme === "dark" ? "text-white group-hover:text-purple-300" : "text-blue-500 group-hover:text-blue-600"
-                    }`} />
-                  </div>
-                </div>
-                
-                <p className={`text-xl font-medium ${
-                  theme === "dark" ? "text-white" : "text-gray-900"
-                }`}>
-                  Handstand
-                </p>
-                
-                <div className={`absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none ${
-                  theme === "dark"
-                    ? "bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/10"
-                    : "bg-gradient-to-br from-blue-400/10 via-transparent to-cyan-400/10"
-                }`}></div>
-              </button>
+            {/* Exercise Selection */}
+            <section className="mb-16">
+              <div className={`border-t-4 pt-8 ${theme === "dark" ? "border-[#f2f2f2]" : "border-[#1a1a1a]"}`}>
+                <h2 className={`text-sm font-bold uppercase tracking-wider mb-8 ${theme === "dark" ? "text-[#999999]" : "text-[#666666]"}`}>
+                  Select Exercise Type
+                </h2>
 
-              {/* Straddle Jump Option */}
-              <button
-                onClick={() => handleOptionSelect("straddle_jump")}
-                className={`
-                  group relative
-                  backdrop-blur-2xl
-                  border-2 rounded-3xl
-                  p-12 transition-all duration-300
-                  shadow-[0_8px_32px_0_rgba(0,0,0,0.37)]
-                  hover:scale-[1.02]
-                  ${theme === "dark"
-                    ? "bg-white/5 border-white/20 hover:bg-white/10 hover:border-purple-400/40"
-                    : "bg-blue-50/50 border-blue-200/40 hover:bg-blue-100/60 hover:border-blue-400/60"
-                  }
-                `}
-              >
-                <div className="flex justify-center mb-8">
-                  <div className={`
-                    p-6 rounded-2xl border-2 transition-all duration-300
-                    ${theme === "dark"
-                      ? "bg-white/10 border-white/20 group-hover:bg-purple-500/20 group-hover:border-purple-400/40"
-                      : "bg-white/60 border-blue-200/40 group-hover:bg-blue-500/20 group-hover:border-blue-500/40"
-                    }
-                  `}>
-                    <svg className={`w-12 h-12 ${
-                      theme === "dark" ? "text-white/70 group-hover:text-purple-300" : "text-blue-500 group-hover:text-blue-600"
-                    }`} strokeWidth={1.5} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 15.3m14.8 0l-.94 3.013c-.07.22-.263.348-.49.348h-2.25a.75.75 0 01-.75-.75V17.5m-7.5 0v.563a.75.75 0 01-.75.75H5.12c-.227 0-.42-.128-.49-.348L3.7 15.3" />
-                    </svg>
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Handstand Option */}
+                  <button
+                    onClick={() => handleOptionSelect("handstand")}
+                    className={`
+                      group relative
+                      border-2 p-8
+                      text-left transition-all duration-200
+                      hover:-translate-y-1
+                      ${theme === "dark"
+                        ? "bg-[#1a1a1a] border-[#404040] hover:border-[#00b4d8]"
+                        : "bg-white border-[#d4d4d4] hover:border-[#00b4d8]"
+                      }
+                    `}
+                  >
+                    <div className={`
+                      mb-6 p-4 border-2 inline-block transition-colors duration-200
+                      ${theme === "dark"
+                        ? "border-[#404040] group-hover:border-[#00b4d8] group-hover:bg-[#00b4d8]/10"
+                        : "border-[#d4d4d4] group-hover:border-[#00b4d8] group-hover:bg-[#00b4d8]/5"
+                      }
+                    `}>
+                      <HandstandIcon className={`w-10 h-10 transition-colors duration-200 ${
+                        theme === "dark"
+                          ? "text-[#f2f2f2] group-hover:text-[#00b4d8]"
+                          : "text-[#1a1a1a] group-hover:text-[#00b4d8]"
+                      }`} />
+                    </div>
+
+                    <h3 className={`text-2xl font-black uppercase tracking-tight mb-2 ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}
+                      style={{ fontFamily: "'Archivo Black', sans-serif" }}>
+                      Handstand
+                    </h3>
+                    <p className={`text-sm ${theme === "dark" ? "text-[#999999]" : "text-[#666666]"}`}>
+                      Analyze handstand form and balance
+                    </p>
+
+                    {/* Accent line on hover */}
+                    <div className="absolute bottom-0 left-0 w-0 h-1 bg-[#00b4d8] transition-all duration-200 group-hover:w-full" />
+                  </button>
+
+                  {/* Straddle Jump Option */}
+                  <button
+                    onClick={() => handleOptionSelect("straddle_jump")}
+                    className={`
+                      group relative
+                      border-2 p-8
+                      text-left transition-all duration-200
+                      hover:-translate-y-1
+                      ${theme === "dark"
+                        ? "bg-[#1a1a1a] border-[#404040] hover:border-[#00b4d8]"
+                        : "bg-white border-[#d4d4d4] hover:border-[#00b4d8]"
+                      }
+                    `}
+                  >
+                    <div className={`
+                      mb-6 p-4 border-2 inline-block transition-colors duration-200
+                      ${theme === "dark"
+                        ? "border-[#404040] group-hover:border-[#00b4d8] group-hover:bg-[#00b4d8]/10"
+                        : "border-[#d4d4d4] group-hover:border-[#00b4d8] group-hover:bg-[#00b4d8]/5"
+                      }
+                    `}>
+                      <svg className={`w-10 h-10 transition-colors duration-200 ${
+                        theme === "dark"
+                          ? "text-[#f2f2f2] group-hover:text-[#00b4d8]"
+                          : "text-[#1a1a1a] group-hover:text-[#00b4d8]"
+                      }`} strokeWidth={1.5} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 15.3m14.8 0l-.94 3.013c-.07.22-.263.348-.49.348h-2.25a.75.75 0 01-.75-.75V17.5m-7.5 0v.563a.75.75 0 01-.75.75H5.12c-.227 0-.42-.128-.49-.348L3.7 15.3" />
+                      </svg>
+                    </div>
+
+                    <h3 className={`text-2xl font-black uppercase tracking-tight mb-2 ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}
+                      style={{ fontFamily: "'Archivo Black', sans-serif" }}>
+                      Straddle Jump
+                    </h3>
+                    <p className={`text-sm ${theme === "dark" ? "text-[#999999]" : "text-[#666666]"}`}>
+                      Analyze jump form and extension
+                    </p>
+
+                    <div className="absolute bottom-0 left-0 w-0 h-1 bg-[#00b4d8] transition-all duration-200 group-hover:w-full" />
+                  </button>
                 </div>
-                
-                <p className={`text-xl font-medium ${
-                  theme === "dark" ? "text-white" : "text-gray-900"
-                }`}>
-                  Straddle Jump
-                </p>
-                
-                <div className={`absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none ${
-                  theme === "dark"
-                    ? "bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/10"
-                    : "bg-gradient-to-br from-blue-400/10 via-transparent to-cyan-400/10"
-                }`}></div>
-              </button>
-            </div>
+              </div>
+            </section>
 
             {/* Footer */}
-            <div className="mt-16 text-center">
-              <p className={`text-sm ${theme === "dark" ? "text-white/40" : "text-gray-400"}`}>
-                Powered by advanced AI processing • Secure & Private
+            <footer className={`pt-8 border-t-2 ${theme === "dark" ? "border-[#404040]" : "border-[#d4d4d4]"}`}>
+              <p className={`text-xs uppercase tracking-wider ${theme === "dark" ? "text-[#666666]" : "text-[#999999]"}`}>
+                Powered by AI / Secure & Private
               </p>
-              {/* Attribution for Handstand Icon */}
-              <a 
+              <a
                 href="https://www.vecteezy.com/free-vector/handstand"
-                target="_blank" 
+                target="_blank"
                 rel="noopener noreferrer"
-                className={`text-xs mt-2 block hover:underline ${theme === "dark" ? "text-white/20 hover:text-white/40" : "text-gray-400 hover:text-gray-600"}`}
+                className={`text-xs mt-2 block hover:text-[#00b4d8] transition-colors ${theme === "dark" ? "text-[#404040]" : "text-[#cccccc]"}`}
               >
                 Handstand Vectors by Vecteezy
               </a>
-            </div>
+            </footer>
           </>
         ) : (
           <>
@@ -520,64 +482,58 @@ export default function App() {
                 setSelectedVideoId(null);
               }}
               className={`
-                fixed top-8 left-8 z-50
-                inline-flex items-center gap-2 px-5 py-3
-                backdrop-blur-xl border-2 rounded-full
-                transition-all duration-300
-                hover:scale-105
-                shadow-2xl
+                fixed top-6 left-6 z-50
+                inline-flex items-center gap-2 px-4 py-2
+                border-2 transition-all duration-200
+                hover:-translate-y-0.5
                 ${theme === "dark"
-                  ? "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/30"
-                  : "bg-blue-500/10 border-blue-500/30 text-gray-900 hover:bg-blue-500/20 hover:border-blue-500/50"
+                  ? "bg-[#1a1a1a] border-[#404040] text-[#f2f2f2] hover:border-[#00b4d8]"
+                  : "bg-white border-[#d4d4d4] text-[#1a1a1a] hover:border-[#00b4d8]"
                 }
               `}
             >
-              <ArrowLeft className="w-5 h-5" />
-              <span className="font-medium">Back</span>
+              <ArrowLeft className="w-4 h-4" />
+              <span className="text-sm font-bold uppercase tracking-wider">Back</span>
             </button>
 
-            {/* Upload Interface */}
-            <div className="text-center mb-16">
-              <div className="flex items-center justify-center gap-3 mb-4">
-                <div className={`p-3 rounded-2xl backdrop-blur-xl border shadow-2xl ${
-                  theme === "dark"
-                    ? "bg-white/10 border-white/20"
-                    : "bg-blue-500/10 border-blue-500/20"
-                }`}>
-                  <Video className={`w-8 h-8 ${theme === "dark" ? "text-white" : "text-blue-600"}`} />
+            {/* Upload Interface Header */}
+            <header className="mb-12">
+              <div className="flex items-center gap-4 mb-6">
+                <div className={`p-3 border-2 ${theme === "dark" ? "border-[#00b4d8] bg-[#00b4d8]/10" : "border-[#00b4d8] bg-[#00b4d8]/5"}`}>
+                  <Video className="w-8 h-8 text-[#00b4d8]" />
                 </div>
+                <div className={`h-[2px] flex-1 ${theme === "dark" ? "bg-[#404040]" : "bg-[#d4d4d4]"}`} />
               </div>
-              <h1 className={`text-5xl font-semibold mb-3 tracking-tight ${
-                theme === "dark" ? "text-white" : "text-gray-900"
-              }`}>
-                {selectedOption === "handstand" ? "Handstand" : "Straddle Jump"} Analysis
+
+              <h1 className={`text-3xl md:text-4xl font-black tracking-tight mb-4 ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}
+                style={{ fontFamily: "'Archivo Black', sans-serif" }}>
+                {selectedOption === "handstand" ? "HANDSTAND" : "STRADDLE JUMP"}<br />
+                <span className="text-[#00b4d8]">ANALYSIS</span>
               </h1>
-              <p className={`text-lg mb-5 ${theme === "dark" ? "text-white/60" : "text-gray-600"}`}>
+
+              <p className={`text-base mb-6 ${theme === "dark" ? "text-[#999999]" : "text-[#666666]"}`}>
                 Upload your videos for AI-powered analysis
               </p>
-              
-              {/* How to Use Button */}
+
               <button
                 onClick={() => setShowInstructions(true)}
                 className={`
-                  inline-flex items-center gap-2 px-6 py-3
-                  backdrop-blur-xl border rounded-full
-                  transition-all duration-200
-                  hover:scale-105
-                  shadow-lg hover:shadow-xl
+                  inline-flex items-center gap-2 px-5 py-2
+                  border-2 transition-all duration-200
+                  hover:-translate-y-0.5
                   ${theme === "dark"
-                    ? "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/30"
-                    : "bg-blue-500/10 border-blue-500/30 text-gray-900 hover:bg-blue-500/20 hover:border-blue-500/50"
+                    ? "bg-transparent border-[#404040] text-[#f2f2f2] hover:border-[#00b4d8]"
+                    : "bg-transparent border-[#d4d4d4] text-[#1a1a1a] hover:border-[#00b4d8]"
                   }
                 `}
               >
-                <HelpCircle className="w-5 h-5" />
-                <span className="font-medium">How to Use</span>
+                <HelpCircle className="w-4 h-4" />
+                <span className="text-sm font-bold uppercase tracking-wider">Instructions</span>
               </button>
-            </div>
+            </header>
 
             {/* Upload Area */}
-            <div className="mb-8">
+            <section className="mb-8">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -593,202 +549,151 @@ export default function App() {
                 onDrop={handleDrop}
                 className={`
                   relative group cursor-pointer
-                  backdrop-blur-2xl
-                  border-2 border-dashed rounded-3xl
-                  p-16 transition-all duration-300
-                  shadow-[0_8px_32px_0_rgba(0,0,0,0.37)]
-                  ${theme === "dark" 
-                    ? `bg-white/5 hover:bg-white/10 ${isDragging ? 'border-purple-400/60 bg-white/15 scale-[1.02]' : 'border-white/20'} ${videos.length > 0 ? 'border-purple-400/40 bg-purple-500/10' : ''} hover:border-white/30`
-                    : `bg-blue-50/50 hover:bg-blue-50/80 ${isDragging ? 'border-blue-400/60 bg-blue-100/70 scale-[1.02]' : 'border-blue-300/40'} ${videos.length > 0 ? 'border-blue-500/60 bg-blue-100/60' : ''} hover:border-blue-400/60`
+                  border-2 border-dashed
+                  p-12 min-h-[250px]
+                  flex flex-col items-center justify-center
+                  transition-all duration-200
+                  ${isDragging ? 'border-[#00b4d8] bg-[#00b4d8]/5' : ''}
+                  ${videos.length > 0 ? 'border-[#00b4d8]' : ''}
+                  ${theme === "dark"
+                    ? `bg-[#1a1a1a] ${!isDragging && videos.length === 0 ? 'border-[#404040]' : ''} hover:border-[#00b4d8]`
+                    : `bg-white ${!isDragging && videos.length === 0 ? 'border-[#d4d4d4]' : ''} hover:border-[#00b4d8]`
                   }
                 `}
               >
-                <div className={`absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${
-                  theme === "dark"
-                    ? "bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/10"
-                    : "bg-gradient-to-br from-blue-400/10 via-transparent to-cyan-400/10"
-                }`}></div>
-                
-                <div className="relative flex flex-col items-center justify-center text-center">
-                  <div className={`
-                    mb-6 p-6 rounded-2xl transition-all duration-300
-                    ${theme === "dark"
-                      ? videos.length > 0
-                        ? 'bg-purple-500/20 border-2 border-purple-400/40' 
-                        : 'bg-white/10 border-2 border-white/20'
-                      : videos.length > 0
-                        ? 'bg-blue-500/20 border-2 border-blue-500/40'
-                        : 'bg-blue-500/10 border-2 border-blue-300/30'
-                    }
-                  `}>
-                    <Upload className={`w-12 h-12 transition-colors duration-300 ${
-                      theme === "dark"
-                        ? videos.length > 0 ? 'text-purple-300' : 'text-white/70'
-                        : videos.length > 0 ? 'text-blue-600' : 'text-blue-500'
-                    }`} />
-                  </div>
-                  
-                  {videos.length > 0 ? (
-                    <div>
-                      <p className={`text-xl mb-2 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
-                        {videos.length} video{videos.length > 1 ? 's' : ''} uploaded
-                      </p>
-                      <p className={`text-sm ${theme === "dark" ? "text-white/50" : "text-gray-500"}`}>
-                        Total: {(videos.reduce((sum, v) => sum + v.file.size, 0) / (1024 * 1024)).toFixed(2)} MB
-                      </p>
-                      <p className={`text-sm mt-3 ${theme === "dark" ? "text-purple-300" : "text-blue-600"}`}>
-                        Click or drop to add more videos
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p className={`text-xl mb-2 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
-                        Drop videos here or click to upload
-                      </p>
-                      <p className={`text-sm ${theme === "dark" ? "text-white/50" : "text-gray-500"}`}>
-                        Supports multiple videos • MP4, MOV, AVI, and more
-                      </p>
-                    </div>
-                  )}
+                <div className={`
+                  mb-6 p-4 border-2 transition-colors duration-200
+                  ${videos.length > 0
+                    ? 'border-[#00b4d8] bg-[#00b4d8]/10'
+                    : theme === "dark"
+                      ? 'border-[#404040] group-hover:border-[#00b4d8]'
+                      : 'border-[#d4d4d4] group-hover:border-[#00b4d8]'
+                  }
+                `}>
+                  <Upload className={`w-10 h-10 transition-colors duration-200 ${
+                    videos.length > 0
+                      ? 'text-[#00b4d8]'
+                      : theme === "dark"
+                        ? 'text-[#999999] group-hover:text-[#00b4d8]'
+                        : 'text-[#666666] group-hover:text-[#00b4d8]'
+                  }`} />
                 </div>
+
+                {videos.length > 0 ? (
+                  <div className="text-center">
+                    <p className={`text-xl font-bold uppercase tracking-tight mb-2 ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}>
+                      {videos.length} VIDEO{videos.length > 1 ? 'S' : ''} UPLOADED
+                    </p>
+                    <p className={`text-sm font-mono ${theme === "dark" ? "text-[#666666]" : "text-[#999999]"}`}>
+                      {(videos.reduce((sum, v) => sum + v.file.size, 0) / (1024 * 1024)).toFixed(2)} MB total
+                    </p>
+                    <p className="text-sm text-[#00b4d8] mt-3 font-medium">
+                      Click or drop to add more
+                    </p>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <p className={`text-xl font-bold uppercase tracking-tight mb-2 ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}>
+                      DROP VIDEO HERE
+                    </p>
+                    <p className={`text-sm ${theme === "dark" ? "text-[#666666]" : "text-[#999999]"}`}>
+                      or click to upload / MP4, MOV, AVI
+                    </p>
+                  </div>
+                )}
               </div>
-            </div>
+            </section>
 
             {/* Video Status List */}
             {videos.length > 0 && (
-              <div className={`
-                mb-8 p-6 rounded-3xl
-                backdrop-blur-2xl border-2
-                shadow-[0_8px_32px_0_rgba(0,0,0,0.37)]
-                ${theme === "dark"
-                  ? "bg-white/5 border-white/20"
-                  : "bg-white/60 border-blue-200/60"
-                }
-              `}>
-                <h3 className={`text-lg font-semibold mb-4 ${
-                  theme === "dark" ? "text-white" : "text-gray-900"
-                }`}>
-                  Processing Status
-                </h3>
-                
-                <div className="space-y-3">
+              <section className={`mb-8 border-2 ${theme === "dark" ? "bg-[#1a1a1a] border-[#404040]" : "bg-white border-[#d4d4d4]"}`}>
+                <div className={`px-6 py-4 border-b-2 ${theme === "dark" ? "border-[#404040]" : "border-[#d4d4d4]"}`}>
+                  <h2 className={`text-sm font-bold uppercase tracking-wider ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}>
+                    Processing Status
+                  </h2>
+                </div>
+
+                <div className="divide-y-2 divide-[#404040] dark:divide-[#404040]">
                   {videos.map((video) => (
-                    <div
-                      key={video.id}
-                      className={`
-                        p-4 rounded-xl border
-                        transition-all duration-200
-                        ${theme === "dark"
-                          ? "bg-white/5 border-white/10 hover:bg-white/10"
-                          : "bg-white/60 border-blue-200/30 hover:bg-white/80"
-                        }
-                      `}
-                    >
-                      <div className="flex items-center justify-between mb-2">
+                    <div key={video.id} className="px-6 py-4">
+                      <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-3 flex-1 min-w-0">
                           <div className={getStatusColor(video.status.status)}>
                             {getStatusIcon(video.status.status)}
                           </div>
-                          <span className={`font-medium truncate ${
-                            theme === "dark" ? "text-white" : "text-gray-900"
-                          }`}>
+                          <span className={`font-medium truncate font-mono text-sm ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}>
                             {video.file.name}
                           </span>
                         </div>
-                        <span className={`text-sm capitalize ${getStatusColor(video.status.status)}`}>
+                        <span className={`text-xs uppercase tracking-wider font-bold ${getStatusColor(video.status.status)}`}>
                           {video.status.status}
                         </span>
                       </div>
-                      
-                      {/* Progress bar for processing videos */}
+
+                      {/* Progress bar */}
                       {(video.status.status === "processing" || video.status.status === "pending") && typeof video.status.progress === 'number' && (
-                        <div className={`h-2 rounded-full overflow-hidden ${
-                          theme === "dark" ? "bg-white/10" : "bg-gray-200"
-                        }`}>
-                          <div 
-                            className={`h-full rounded-full transition-all duration-300 ${
-                              theme === "dark" 
-                                ? "bg-gradient-to-r from-purple-500 to-blue-500" 
-                                : "bg-gradient-to-r from-blue-500 to-cyan-500"
-                            }`}
+                        <div className={`h-2 ${theme === "dark" ? "bg-[#333333]" : "bg-[#e5e5e5]"}`}>
+                          <div
+                            className="h-full bg-[#00b4d8] transition-all duration-300"
                             style={{ width: `${video.status.progress}%` }}
-                          ></div>
+                          />
                         </div>
                       )}
-                      
+
                       {/* Error message */}
                       {video.status.status === "failed" && video.status.error_message && (
-                        <p className={`text-sm mt-2 ${
-                          theme === "dark" ? "text-red-400" : "text-red-600"
-                        }`}>
+                        <p className="text-sm mt-2 text-red-500 font-mono">
                           {video.status.error_message}
                         </p>
                       )}
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
             )}
 
-            {/* Results Section - Only show if at least one video is completed */}
+            {/* Results Section */}
             {hasCompletedVideos && (
-              <div className={`
-                backdrop-blur-2xl
-                border rounded-3xl
-                p-8
-                mb-64
-                shadow-[0_8px_32px_0_rgba(0,0,0,0.37)]
-                animate-in fade-in slide-in-from-bottom-4 duration-700
-                ${theme === "dark"
-                  ? "bg-white/5 border-white/20"
-                  : "bg-white/60 border-blue-200/60"
-                }
-              `}>
-                <h2 className={`text-2xl mb-6 flex items-center gap-2 ${
-                  theme === "dark" ? "text-white" : "text-gray-900"
-                }`}>
-                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                  Analysis Results
-                </h2>
-                
-                {/* Video Selector Dropdown */}
-                <div className="mb-8">
-                  <label className={`block text-sm font-medium mb-2 ${
-                    theme === "dark" ? "text-white/80" : "text-gray-700"
-                  }`}>
-                    Select Video to Preview
+              <section className={`border-2 p-6 mb-16 ${theme === "dark" ? "bg-[#1a1a1a] border-[#404040]" : "bg-white border-[#d4d4d4]"}`}>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-3 h-3 bg-[#00b4d8]" />
+                  <h2 className={`text-lg font-black uppercase tracking-tight ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}
+                    style={{ fontFamily: "'Archivo Black', sans-serif" }}>
+                    Analysis Results
+                  </h2>
+                </div>
+
+                {/* Video Selector */}
+                <div className="mb-6">
+                  <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${theme === "dark" ? "text-[#999999]" : "text-[#666666]"}`}>
+                    Select Video
                   </label>
                   <div className="relative">
                     <button
                       onClick={() => setShowVideoSelector(!showVideoSelector)}
                       className={`
-                        w-full px-4 py-3 rounded-xl
-                        backdrop-blur-xl border-2
+                        w-full px-4 py-3 border-2
                         flex items-center justify-between
                         transition-all duration-200
                         ${theme === "dark"
-                          ? "bg-white/5 border-white/20 text-white hover:bg-white/10"
-                          : "bg-white/60 border-blue-200/40 text-gray-900 hover:bg-white/80"
+                          ? "bg-[#1f1f1f] border-[#404040] text-[#f2f2f2] hover:border-[#00b4d8]"
+                          : "bg-[#f5f5f5] border-[#d4d4d4] text-[#1a1a1a] hover:border-[#00b4d8]"
                         }
                       `}
                     >
-                      <span className="truncate">
+                      <span className="truncate font-mono text-sm">
                         {selectedVideo ? selectedVideo.file.name : "Select a video"}
                       </span>
-                      <ChevronDown className={`w-5 h-5 transition-transform ${
-                        showVideoSelector ? "rotate-180" : ""
-                      }`} />
+                      <ChevronDown className={`w-5 h-5 transition-transform ${showVideoSelector ? "rotate-180" : ""}`} />
                     </button>
-                    
+
                     {showVideoSelector && (
                       <div className={`
-                        absolute top-full left-0 right-0 mt-2
-                        backdrop-blur-2xl border-2 rounded-xl
-                        overflow-hidden shadow-[0_8px_32px_0_rgba(0,0,0,0.6)]
-                        z-20
+                        absolute top-full left-0 right-0 mt-1
+                        border-2 z-20
                         ${theme === "dark"
-                          ? "bg-[#1a1a2e]/95 border-white/20"
-                          : "bg-white/95 border-blue-200/60"
+                          ? "bg-[#1f1f1f] border-[#404040]"
+                          : "bg-white border-[#d4d4d4]"
                         }
                       `}>
                         {videos.filter(v => v.status.status === "completed").map((video) => (
@@ -800,21 +705,20 @@ export default function App() {
                             }}
                             className={`
                               w-full px-4 py-3 text-left
+                              border-b last:border-b-0
                               transition-all duration-200
                               ${selectedVideoId === video.id
-                                ? theme === "dark"
-                                  ? "bg-purple-500/20 text-white"
-                                  : "bg-blue-500/20 text-gray-900"
+                                ? "bg-[#00b4d8]/10 border-[#00b4d8]"
                                 : theme === "dark"
-                                  ? "text-white hover:bg-white/10"
-                                  : "text-gray-900 hover:bg-blue-50"
+                                  ? "border-[#404040] hover:bg-[#2a2a2a]"
+                                  : "border-[#e5e5e5] hover:bg-[#f5f5f5]"
                               }
                             `}
                           >
-                            <div className="truncate">{video.file.name}</div>
-                            <div className={`text-xs mt-1 ${
-                              theme === "dark" ? "text-white/60" : "text-gray-600"
-                            }`}>
+                            <div className={`truncate font-mono text-sm ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}>
+                              {video.file.name}
+                            </div>
+                            <div className={`text-xs font-mono mt-1 ${theme === "dark" ? "text-[#666666]" : "text-[#999999]"}`}>
                               {(video.file.size / (1024 * 1024)).toFixed(2)} MB
                             </div>
                           </button>
@@ -823,20 +727,11 @@ export default function App() {
                     )}
                   </div>
                 </div>
-                
+
                 {/* Video Preview */}
                 {selectedVideo && (
-                  <div className="mb-8">
-                    <div className={`
-                      relative rounded-2xl overflow-hidden
-                      backdrop-blur-xl
-                      border-2
-                      shadow-[0_8px_32px_0_rgba(0,0,0,0.4)]
-                      ${theme === "dark"
-                        ? "bg-black/40 border-white/20"
-                        : "bg-gray-100/80 border-blue-200/40"
-                      }
-                    `}>
+                  <div className="mb-6">
+                    <div className={`border-2 overflow-hidden ${theme === "dark" ? "bg-black border-[#404040]" : "bg-[#1a1a1a] border-[#d4d4d4]"}`}>
                       <video
                         key={selectedVideo.status.status === "completed" ? `processed-${selectedVideo.id}` : `preview-${selectedVideo.id}`}
                         src={
@@ -847,315 +742,186 @@ export default function App() {
                         controls
                         className="w-full h-auto max-h-[400px] object-contain"
                       />
-                      <div className={`absolute inset-0 pointer-events-none ${
-                        theme === "dark"
-                          ? "bg-gradient-to-t from-purple-900/10 to-transparent"
-                          : "bg-gradient-to-t from-blue-900/5 to-transparent"
-                      }`}></div>
                     </div>
                     {selectedVideo.status.status === "completed" && (
-                      <p className={`text-xs mt-2 text-center ${
-                        theme === "dark" ? "text-white/60" : "text-gray-500"
-                      }`}>
-                        Processed Video Preview
+                      <p className={`text-xs uppercase tracking-wider mt-2 ${theme === "dark" ? "text-[#666666]" : "text-[#999999]"}`}>
+                        Processed Video
                       </p>
                     )}
                   </div>
                 )}
-                
-                {/* Analysis Results Section */}
-                {resultsData && (
-                  <div className={`
-                    mb-8 p-6 rounded-2xl
-                    backdrop-blur-xl border-2
-                    shadow-[0_4px_16px_0_rgba(0,0,0,0.25)]
-                    ${theme === "dark"
-                      ? "bg-white/5 border-white/10"
-                      : "bg-blue-50/50 border-blue-200/40"
-                    }
-                  `}>
-                    <h3 className={`text-xl mb-6 font-semibold ${
-                      theme === "dark" ? "text-white" : "text-gray-900"
-                    }`}>
-                      Analysis Results
-                    </h3>
 
-                    {/* Overall Score Card */}
-                    <div className={`
-                      mb-6 p-6 rounded-2xl
-                      backdrop-blur-xl border-2
-                      shadow-[0_4px_16px_0_rgba(0,0,0,0.3)]
-                      ${theme === "dark"
-                        ? "bg-gradient-to-br from-purple-500/20 via-white/5 to-blue-500/20 border-purple-400/40"
-                        : "bg-gradient-to-br from-blue-500/20 via-white/60 to-cyan-500/20 border-blue-400/60"
-                      }
-                    `}>
-                      <div className="text-center">
-                        <p className={`text-sm mb-2 uppercase tracking-wider ${
-                          theme === "dark" ? "text-white/60" : "text-gray-600"
-                        }`}>
-                          Overall Score
-                        </p>
-                        <div className="flex items-center justify-center gap-3 mb-2">
-                          <span className={`text-5xl font-bold ${
-                            theme === "dark" ? "text-white" : "text-gray-900"
-                          }`}>
-                            {resultsData.overall_score}
-                          </span>
-                          <span className={`text-3xl ${
-                            theme === "dark" ? "text-white/40" : "text-gray-400"
-                          }`}>
-                            / {resultsData.max_score}
-                          </span>
-                        </div>
-                        <div className={`text-2xl font-semibold ${
-                          theme === "dark" ? "text-purple-300" : "text-blue-600"
-                        }`}>
-                          {resultsData.percentage.toFixed(1)}%
-                        </div>
+                {/* Analysis Results */}
+                {resultsData && (
+                  <div className={`mb-6 border-2 ${theme === "dark" ? "border-[#404040]" : "border-[#d4d4d4]"}`}>
+                    {/* Overall Score */}
+                    <div className={`p-6 border-b-2 ${theme === "dark" ? "border-[#404040]" : "border-[#d4d4d4]"}`}>
+                      <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${theme === "dark" ? "text-[#666666]" : "text-[#999999]"}`}>
+                        Overall Score
+                      </p>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-5xl font-black text-[#00b4d8]" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
+                          {resultsData.overall_score}
+                        </span>
+                        <span className={`text-2xl ${theme === "dark" ? "text-[#404040]" : "text-[#d4d4d4]"}`}>
+                          / {resultsData.max_score}
+                        </span>
+                      </div>
+                      <div className={`text-xl font-bold mt-2 ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}>
+                        {resultsData.percentage.toFixed(1)}%
                       </div>
                     </div>
 
-                    {/* Poses Section with Pie Chart */}
+                    {/* Poses Grid and Chart */}
                     {chartData.length > 0 && (
-                      <div className={`
-                        p-6 rounded-2xl
-                        backdrop-blur-xl border-2
-                        ${theme === "dark"
-                          ? "bg-white/5 border-white/10"
-                          : "bg-white/60 border-blue-200/30"
-                        }
-                      `}>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                          {/* Left Side: Individual Pose Cards */}
-                          <div className="space-y-4">
-                            {allPoses.map((pose, index) => (
-                              <div
-                                key={index}
-                                className={`
-                                  p-5 rounded-xl
-                                  backdrop-blur-xl border-2
-                                  transition-all duration-200
-                                  ${theme === "dark"
-                                    ? "bg-white/5 border-white/10"
-                                    : "bg-white/60 border-blue-200/30"
-                                  }
-                                `}
-                              >
-                                <div className="flex items-center justify-between mb-3">
-                                  <h4 className={`font-semibold ${
-                                    theme === "dark" ? "text-white" : "text-gray-900"
-                                  }`}>
-                                    {pose.name}
-                                  </h4>
-                                  <span className={`text-lg font-bold ${
-                                    theme === "dark" ? "text-white" : "text-gray-900"
-                                  }`}>
-                                    {pose.score}/{pose.max_score}
-                                  </span>
-                                </div>
-
-                                {/* Progress Bar */}
-                                <div className={`h-2 rounded-full overflow-hidden mb-3 ${
-                                  theme === "dark" ? "bg-white/10" : "bg-gray-200"
-                                }`}>
-                                  <div
-                                    className="h-full rounded-full transition-all duration-300"
-                                    style={{
-                                      width: `${(pose.score / pose.max_score) * 100}%`,
-                                      background: `linear-gradient(to right, ${pose.color}, ${pose.color}dd)`
-                                    }}
-                                  ></div>
-                                </div>
-
-                                {/* Description */}
-                                {pose.description && (
-                                  <p className={`text-sm ${
-                                    theme === "dark" ? "text-white/70" : "text-gray-600"
-                                  }`}>
-                                    {pose.description}
-                                  </p>
-                                )}
-
-                                {/* Improvement Needed Badge */}
-                                {(pose.improvement_needed || (pose.score / pose.max_score) <= 0.5) && (
-                                  <div className={`mt-2 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-                                    theme === "dark"
-                                      ? "bg-yellow-500/20 text-yellow-300"
-                                      : "bg-yellow-500/20 text-yellow-700"
-                                  }`}>
-                                    <AlertCircle className="w-3 h-3" />
-                                    <span>Needs improvement</span>
-                                  </div>
-                                )}
+                      <div className="grid grid-cols-1 lg:grid-cols-2">
+                        {/* Pose Cards */}
+                        <div className={`border-r-0 lg:border-r-2 ${theme === "dark" ? "lg:border-[#404040]" : "lg:border-[#d4d4d4]"}`}>
+                          {allPoses.map((pose, index) => (
+                            <div
+                              key={index}
+                              className={`p-4 border-b-2 last:border-b-0 ${theme === "dark" ? "border-[#404040]" : "border-[#d4d4d4]"}`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className={`font-bold uppercase text-sm tracking-wide ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}>
+                                  {pose.name}
+                                </h4>
+                                <span className="font-mono text-sm font-bold" style={{ color: pose.color }}>
+                                  {pose.score}/{pose.max_score}
+                                </span>
                               </div>
-                            ))}
+
+                              {/* Progress Bar */}
+                              <div className={`h-2 mb-2 ${theme === "dark" ? "bg-[#333333]" : "bg-[#e5e5e5]"}`}>
+                                <div
+                                  className="h-full transition-all duration-300"
+                                  style={{
+                                    width: `${(pose.score / pose.max_score) * 100}%`,
+                                    backgroundColor: pose.color
+                                  }}
+                                />
+                              </div>
+
+                              {pose.description && (
+                                <p className={`text-xs ${theme === "dark" ? "text-[#999999]" : "text-[#666666]"}`}>
+                                  {pose.description}
+                                </p>
+                              )}
+
+                              {(pose.improvement_needed || (pose.score / pose.max_score) <= 0.5) && (
+                                <div className="mt-2 inline-flex items-center gap-1 px-2 py-1 bg-[#00b4d8]/10 border border-[#00b4d8]">
+                                  <AlertCircle className="w-3 h-3 text-[#00b4d8]" />
+                                  <span className="text-xs font-bold uppercase text-[#00b4d8]">Needs Work</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Pie Chart */}
+                        <div className="p-6">
+                          <div className="w-full h-[280px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={chartData}
+                                  cx="50%"
+                                  cy="50%"
+                                  labelLine={false}
+                                  outerRadius={90}
+                                  innerRadius={50}
+                                  fill="#8884d8"
+                                  dataKey="value"
+                                  strokeWidth={2}
+                                  stroke={theme === "dark" ? "#141414" : "#fafafa"}
+                                >
+                                  {chartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <Tooltip
+                                  content={({ active, payload }) => {
+                                    if (active && payload && payload.length) {
+                                      const entry = payload[0].payload;
+                                      const isRoomForImprovement = entry.name === "Room for Improvement";
+
+                                      return (
+                                        <div className={`p-3 border-2 ${theme === "dark" ? "bg-[#1a1a1a] border-[#404040]" : "bg-white border-[#d4d4d4]"}`}>
+                                          <p className={`font-bold uppercase text-sm mb-1 ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}>
+                                            {entry.name}
+                                          </p>
+                                          <p className={`text-sm font-mono ${theme === "dark" ? "text-[#999999]" : "text-[#666666]"}`}>
+                                            {isRoomForImprovement
+                                              ? `Points to gain: ${entry.actualScore}`
+                                              : `Score: ${entry.actualScore}/${entry.maxScore}`
+                                            }
+                                          </p>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                              </PieChart>
+                            </ResponsiveContainer>
                           </div>
 
-                          {/* Right Side: Pie Chart */}
-                          <div className="flex flex-col items-center justify-start">
-                            <div className="w-full h-[350px]">
-                              <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                  <Pie
-                                    data={chartData}
-                                    cx="50%"
-                                    cy="50%"
-                                    labelLine={false}
-                                    outerRadius={100}
-                                    innerRadius={60}
-                                    fill="#8884d8"
-                                    dataKey="value"
-                                  >
-                                    {chartData.map((entry, index) => (
-                                      <Cell key={`cell-${index}`} fill={entry.color} />
-                                    ))}
-                                  </Pie>
-                                  <Tooltip
-                                    content={({ active, payload }) => {
-                                      if (active && payload && payload.length) {
-                                        const entry = payload[0].payload;
-                                        const isRoomForImprovement = entry.name === "Room for Improvement";
-
-                                        return (
-                                          <div className={`
-                                            p-4 rounded-xl border-2
-                                            backdrop-blur-2xl
-                                            shadow-2xl
-                                            ${theme === "dark"
-                                              ? "bg-[#1a1a2e]/95 border-white/20"
-                                              : "bg-white/95 border-blue-200/60"
-                                            }
-                                          `}>
-                                            <p className={`font-semibold mb-1 ${
-                                              theme === "dark" ? "text-white" : "text-gray-900"
-                                            }`}>
-                                              {entry.name}
-                                            </p>
-                                            <p className={`text-sm mb-1 ${
-                                              theme === "dark" ? "text-white/80" : "text-gray-700"
-                                            }`}>
-                                              {isRoomForImprovement
-                                                ? `Points to gain: ${entry.actualScore}/${entry.maxScore}`
-                                                : `Score: ${entry.actualScore}/${entry.maxScore}`
-                                              }
-                                            </p>
-                                            <p className={`text-xs ${
-                                              theme === "dark" ? "text-white/60" : "text-gray-600"
-                                            }`}>
-                                              {isRoomForImprovement
-                                                ? "Total points needed for perfect score"
-                                                : entry.poseData?.description || ""
-                                              }
-                                            </p>
-                                            <p className={`text-xs mt-1 ${
-                                              theme === "dark" ? "text-purple-300" : "text-blue-600"
-                                            }`}>
-                                              Chart size: {entry.value.toFixed(1)}%
-                                            </p>
-                                          </div>
-                                        );
-                                      }
-                                      return null;
-                                    }}
-                                  />
-                                </PieChart>
-                              </ResponsiveContainer>
-                            </div>
-
-                            {/* Legend */}
-                            <div className="w-full mt-4 space-y-2">
-                              {chartData.map((entry, index) => {
-                                const isRoomForImprovement = entry.name === "Room for Improvement";
-                                const pose = entry.poseData;
-
-                                return (
-                                  <div key={index} className="flex items-center gap-2 text-sm">
-                                    <div
-                                      className="w-4 h-4 rounded-sm flex-shrink-0"
-                                      style={{ backgroundColor: entry.color }}
-                                    ></div>
-                                    <span className={`flex-1 ${
-                                      theme === "dark" ? "text-white/80" : "text-gray-700"
-                                    }`}>
-                                      {entry.name}
-                                    </span>
-                                    {!isRoomForImprovement && pose && (pose.improvement_needed || (pose.score / pose.max_score) <= 0.5) && (
-                                      <span className={`text-xs ${
-                                        theme === "dark" ? "text-white/50" : "text-gray-400"
-                                      }`}>
-                                        Needs work
-                                      </span>
-                                    )}
-                                    {isRoomForImprovement && (
-                                      <span className={`text-xs ${
-                                        theme === "dark" ? "text-white/50" : "text-gray-400"
-                                      }`}>
-                                        {entry.actualScore} pts
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
+                          {/* Legend */}
+                          <div className="space-y-2 mt-4">
+                            {chartData.map((entry, index) => (
+                              <div key={index} className="flex items-center gap-2 text-xs">
+                                <div className="w-3 h-3 flex-shrink-0" style={{ backgroundColor: entry.color }} />
+                                <span className={`flex-1 uppercase tracking-wide ${theme === "dark" ? "text-[#999999]" : "text-[#666666]"}`}>
+                                  {entry.name}
+                                </span>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       </div>
                     )}
                   </div>
                 )}
-                
-                {/* Save Buttons */}
+
+                {/* Download Buttons */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Save Video Button */}
                   <button
                     onClick={handleSaveVideo}
                     disabled={!selectedVideoId || selectedVideo?.status.status !== "completed"}
                     className={`
-                      group w-full h-14 px-6
-                      backdrop-blur-xl
-                      border-2
-                      rounded-2xl
+                      group flex items-center justify-center gap-3
+                      px-6 py-4 border-2
                       transition-all duration-200
-                      flex items-center justify-center gap-3
-                      shadow-lg hover:shadow-xl
-                      hover:scale-[1.02]
-                      disabled:opacity-50 disabled:cursor-not-allowed
-                      ${theme === "dark"
-                        ? "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/30"
-                        : "bg-blue-500/10 border-blue-500/30 text-gray-900 hover:bg-blue-500/20 hover:border-blue-500/50"
-                      }
+                      disabled:opacity-40 disabled:cursor-not-allowed
+                      hover:-translate-y-0.5
+                      bg-[#00b4d8] border-[#00b4d8] text-white
+                      hover:bg-[#00b4d8]/90
                     `}
                   >
-                    <Download className="w-5 h-5 group-hover:animate-bounce" />
-                    <span className="font-medium">Download Processed Video</span>
+                    <Download className="w-5 h-5" />
+                    <span className="font-bold uppercase tracking-wider text-sm">Download Video</span>
                   </button>
 
-                  {/* Download Report PDF Button */}
                   <button
                     onClick={() => handleSaveReport("pdf")}
                     disabled={!selectedVideoId || !resultsData}
                     className={`
-                      group w-full h-14 px-6
-                      backdrop-blur-xl
-                      border-2
-                      rounded-2xl
+                      group flex items-center justify-center gap-3
+                      px-6 py-4 border-2
                       transition-all duration-200
-                      flex items-center justify-center gap-3
-                      shadow-lg hover:shadow-xl
-                      hover:scale-[1.02]
-                      disabled:opacity-50 disabled:cursor-not-allowed
+                      disabled:opacity-40 disabled:cursor-not-allowed
+                      hover:-translate-y-0.5
                       ${theme === "dark"
-                        ? "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/30"
-                        : "bg-blue-500/10 border-blue-500/30 text-gray-900 hover:bg-blue-500/20 hover:border-blue-500/50"
+                        ? "bg-transparent border-[#f2f2f2] text-[#f2f2f2] hover:bg-[#f2f2f2] hover:text-[#141414]"
+                        : "bg-transparent border-[#1a1a1a] text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-white"
                       }
                     `}
                   >
-                    <Download className="w-5 h-5 group-hover:animate-bounce" />
-                    <span className="font-medium">Download Report (PDF)</span>
+                    <Download className="w-5 h-5" />
+                    <span className="font-bold uppercase tracking-wider text-sm">Download Report (PDF)</span>
                   </button>
                 </div>
-              </div>
+              </section>
             )}
           </>
         )}
@@ -1164,128 +930,55 @@ export default function App() {
       {/* Instructions Dialog */}
       <Dialog open={showInstructions} onOpenChange={setShowInstructions}>
         <DialogContent className={`
-          max-w-2xl
-          backdrop-blur-2xl
-          border-2 rounded-3xl
-          shadow-[0_8px_32px_0_rgba(0,0,0,0.6)]
+          max-w-xl border-2
           ${theme === "dark"
-            ? "bg-[#1a1a2e]/95 border-white/20 text-white"
-            : "bg-white/95 border-blue-200/60 text-gray-900"
+            ? "bg-[#1a1a1a] border-[#404040] text-[#f2f2f2]"
+            : "bg-white border-[#d4d4d4] text-[#1a1a1a]"
           }
         `}>
           <DialogHeader>
-            <DialogTitle className={`text-3xl mb-6 flex items-center gap-3 ${
-              theme === "dark" ? "text-white" : "text-gray-900"
-            }`}>
-              <div className={`p-2 rounded-xl ${
-                theme === "dark" ? "bg-purple-500/20" : "bg-blue-500/20"
-              }`}>
-                <HelpCircle className={`w-6 h-6 ${
-                  theme === "dark" ? "text-purple-300" : "text-blue-600"
-                }`} />
+            <DialogTitle className={`text-2xl font-black uppercase tracking-tight flex items-center gap-3 ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}
+              style={{ fontFamily: "'Archivo Black', sans-serif" }}>
+              <div className="p-2 border-2 border-[#00b4d8] bg-[#00b4d8]/10">
+                <HelpCircle className="w-5 h-5 text-[#00b4d8]" />
               </div>
-              How to Use Video Processor
+              How to Use
             </DialogTitle>
             <DialogDescription className="sr-only">
-              Step-by-step instructions for using the video processor application
+              Step-by-step instructions for using the gymnastics analysis application
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-6 mt-4">
-            <div className={`p-5 rounded-2xl border-2 ${
-              theme === "dark"
-                ? "bg-white/5 border-white/10"
-                : "bg-blue-50/50 border-blue-200/40"
-            }`}>
-              <div className="flex gap-4">
-                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold ${
-                  theme === "dark"
-                    ? "bg-purple-500/30 text-purple-300"
-                    : "bg-blue-500/30 text-blue-700"
-                }`}>
-                  1
-                </div>
-                <div>
-                  <h3 className={`font-semibold mb-2 ${
-                    theme === "dark" ? "text-white" : "text-gray-900"
-                  }`}>
-                    Choose Your Activity
-                  </h3>
-                  <p className={`text-sm ${
-                    theme === "dark" ? "text-white/70" : "text-gray-600"
-                  }`}>
-                    Select either Handstand or Straddle Jump to begin your analysis.
-                  </p>
-                </div>
-              </div>
-            </div>
 
-            <div className={`p-5 rounded-2xl border-2 ${
-              theme === "dark"
-                ? "bg-white/5 border-white/10"
-                : "bg-blue-50/50 border-blue-200/40"
-            }`}>
-              <div className="flex gap-4">
-                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold ${
-                  theme === "dark"
-                    ? "bg-purple-500/30 text-purple-300"
-                    : "bg-blue-500/30 text-blue-700"
-                }`}>
-                  2
-                </div>
-                <div>
-                  <h3 className={`font-semibold mb-2 ${
-                    theme === "dark" ? "text-white" : "text-gray-900"
-                  }`}>
-                    Upload Your Videos
-                  </h3>
-                  <p className={`text-sm ${
-                    theme === "dark" ? "text-white/70" : "text-gray-600"
-                  }`}>
-                    Click the upload area or drag and drop multiple video files. Videos will automatically start processing.
-                  </p>
+          <div className="space-y-4 mt-6">
+            {[
+              { step: "01", title: "Choose Activity", desc: "Select either Handstand or Straddle Jump to begin analysis" },
+              { step: "02", title: "Upload Videos", desc: "Drag and drop or click to upload your training videos" },
+              { step: "03", title: "Review & Export", desc: "View results, watch processed videos, download reports" }
+            ].map((item) => (
+              <div key={item.step} className={`p-4 border-2 ${theme === "dark" ? "border-[#404040]" : "border-[#d4d4d4]"}`}>
+                <div className="flex gap-4">
+                  <span className="text-3xl font-black text-[#00b4d8]" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
+                    {item.step}
+                  </span>
+                  <div>
+                    <h3 className={`font-bold uppercase tracking-wide mb-1 ${theme === "dark" ? "text-[#f2f2f2]" : "text-[#1a1a1a]"}`}>
+                      {item.title}
+                    </h3>
+                    <p className={`text-sm ${theme === "dark" ? "text-[#999999]" : "text-[#666666]"}`}>
+                      {item.desc}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <div className={`p-5 rounded-2xl border-2 ${
-              theme === "dark"
-                ? "bg-white/5 border-white/10"
-                : "bg-blue-50/50 border-blue-200/40"
-            }`}>
-              <div className="flex gap-4">
-                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold ${
-                  theme === "dark"
-                    ? "bg-purple-500/30 text-purple-300"
-                    : "bg-blue-500/30 text-blue-700"
-                }`}>
-                  3
-                </div>
-                <div>
-                  <h3 className={`font-semibold mb-2 ${
-                    theme === "dark" ? "text-white" : "text-gray-900"
-                  }`}>
-                    Review & Export
-                  </h3>
-                  <p className={`text-sm ${
-                    theme === "dark" ? "text-white/70" : "text-gray-600"
-                  }`}>
-                    Monitor processing status, preview completed videos, and download results in your preferred format.
-                  </p>
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
 
-          <div className={`mt-8 p-4 rounded-2xl border ${
-            theme === "dark"
-              ? "bg-purple-500/10 border-purple-500/30"
-              : "bg-blue-500/10 border-blue-500/30"
-          }`}>
-            <p className={`text-sm ${
-              theme === "dark" ? "text-purple-200" : "text-blue-700"
-            }`}>
-              💡 <strong>Tip:</strong> All processing happens securely and your videos are never stored on our servers.
+          <div className="mt-6 p-4 border-2 border-[#00b4d8] bg-[#00b4d8]/5">
+            <p className="text-sm">
+              <span className="font-bold text-[#00b4d8]">TIP:</span>{" "}
+              <span className={theme === "dark" ? "text-[#999999]" : "text-[#666666]"}>
+                All processing happens securely. Your videos are never stored permanently.
+              </span>
             </p>
           </div>
         </DialogContent>

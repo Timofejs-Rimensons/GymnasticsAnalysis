@@ -15,8 +15,8 @@
 *.userprefs
 
 # venvs
-*venv/
-testvenv/
+mediapipevenv/
+tensorflowvenv/
 
 # Mono auto generated files
 mono_crash.*
@@ -106,7 +106,6 @@ StyleCopReport.xml
 *.tli
 *.tlh
 *.tmp
-.temp
 *.tmp_proj
 *_wpftmp.csproj
 *.log
@@ -346,7 +345,6 @@ paket-files/
 
 # Python Tools for Visual Studio (PTVS)
 **/__pycache__/
-*/__init__.py
 *.pyc
 
 # Cake - Uncomment if you are using it
@@ -405,7 +403,6 @@ FodyWeavers.xsd
 # VS Code files for those working on multiple tools
 .vscode/*
 .vscode/settings.json
-.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
@@ -442,3 +439,49 @@ FodyWeavers.xsd
 # Data files
 *.pdf
 *.csv
+
+# Vite
+dist/
+dist-ssr/
+
+# Tests
+coverage/
+
+# React & TypeScript
+*.tsbuildinfo
+.eslintcache
+.cache
+.parcel-cache
+.next/
+out/
+.turbo/
+.vercel/
+
+# Package manager logs
+npm-debug.log*
+npm-error.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+.yarn/install-state.gz
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.production.local
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+
+Labeling
+.claude
