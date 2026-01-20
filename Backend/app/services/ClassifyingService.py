@@ -19,7 +19,7 @@ class ClassifyingService:
     def __init__(
         self,
         num_classes=None,
-        input_size = None,
+        input_size=None,
         window_size=30,
         stride=1,
         hidden_size=128,
@@ -66,7 +66,9 @@ class ClassifyingService:
         )
         
         if model_path:
-            self.model = torch.load(model_path, weights_only=False)
+            # FIX: Add map_location to handle CPU/GPU compatibility
+            self.model = torch.load(model_path, weights_only=False, map_location=self.device)
+            self.model.to(self.device)  # Ensure model is on the correct device
             self.model.eval()
         else:
             self.model = None

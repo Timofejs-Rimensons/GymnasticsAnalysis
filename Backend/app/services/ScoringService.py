@@ -58,7 +58,8 @@ class ScoringService:
         )
         
         if model_path:
-            self.model = torch.load(model_path, weights_only=False)
+            self.model = torch.load(model_path, weights_only=False, map_location=self.device)
+            self.model.to(self.device)
             self.model.eval()
         else:
             self.model = None
