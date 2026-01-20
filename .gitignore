@@ -485,3 +485,5 @@ lerna-debug.log*
 
 Labeling
 .claude
+.venv
+.temp
