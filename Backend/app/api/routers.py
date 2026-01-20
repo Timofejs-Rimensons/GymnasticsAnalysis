@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks, Path, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks, Path, Form, Body
 from sqlalchemy.orm import Session
 import uuid
 from pathlib import Path as PathLib
@@ -38,7 +38,8 @@ async def upload_video(
     video: UploadFile = File(...),
     exercise_name: str = Form(default="handstand"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    # Optional auth - comment out for testing
+    # current_user: User = Depends(get_current_user)
 ):
     """
     Uploads a video for analysis.
@@ -68,13 +69,13 @@ async def upload_video(
     with open(video_path, 'rb') as f:
         video_blob = f.read()
 
-    # Create job record in the database with user_id, exercise_id and video_blob
+    # Create job record in the database with exercise_id and video_blob
     job = analysis_job_repo.create_job(
         db, 
         video_filename=str(video_path),
         exercise_id=exercise_id,
         video_blob=video_blob,
-        user_id=current_user.id
+        user_id=None  # No user auth for testing
     )
     
     return job
@@ -83,6 +84,7 @@ async def upload_video(
 async def process_video(
     background_tasks: BackgroundTasks,
     job_id: uuid.UUID,
+    request_body: schemas.ProcessRequest = Body(...),
     db: Session = Depends(get_db)
 ):
     """
@@ -110,6 +112,9 @@ async def process_video(
     output_pdf_path = output_dir / f"{video_path.stem}.pdf"
 
     try:
+        # Get exercise name from request
+        exercise_name = request_body.exercise_name or "handstand"
+        
         # The processing service needs to be adapted to not use a status file.
         # For now, we assume it runs and puts the result in output_json_path.
         # We will mock the behavior of the processing service for now.
@@ -120,7 +125,7 @@ async def process_video(
             output_video_path=str(output_video_path),
             output_pdf_path=str(output_pdf_path),
             output_json_path=str(output_json_path),
-            exercise_name="handstand",
+            exercise_name=exercise_name,
             status_json_path=str(output_dir / "status.json")
         )
 
@@ -165,6 +170,74 @@ async def get_results(job_id: uuid.UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=f"Job status is '{job.status}'. Results are not available.")
         
     return job
+
+@router.get("/download/json/{job_id}")
+async def download_json(job_id: uuid.UUID, db: Session = Depends(get_db)):
+    """
+    Serves the JSON results of a completed analysis job.
+    """
+    job = analysis_job_repo.get_job(db=db, job_id=job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job.status != 'completed':
+        raise HTTPException(status_code=400, detail=f"Job status is '{job.status}'. Results are not available.")
+    
+    # Return the results that were stored in the database
+    if not job.results:
+        raise HTTPException(status_code=404, detail="Results not found")
+    
+    return job.results
+
+@router.get("/download/video/{job_id}")
+async def download_video(job_id: uuid.UUID, db: Session = Depends(get_db)):
+    """
+    Downloads the processed video with skeleton visualization.
+    """
+    from fastapi.responses import FileResponse
+    
+    job = analysis_job_repo.get_job(db=db, job_id=job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Construct path to processed video
+    video_path = PathLib(job.video_filename)
+    output_dir = video_path.parent / "output" / str(job.id)
+    output_video_path = output_dir / video_path.name
+    
+    if not output_video_path.exists():
+        raise HTTPException(status_code=404, detail="Processed video not found")
+    
+    return FileResponse(
+        path=output_video_path,
+        media_type="video/mp4",
+        filename=f"processed_{video_path.name}"
+    )
+
+@router.get("/download/pdf/{job_id}")
+async def download_pdf(job_id: uuid.UUID, db: Session = Depends(get_db)):
+    """
+    Downloads the PDF report of the analysis.
+    """
+    from fastapi.responses import FileResponse
+    
+    job = analysis_job_repo.get_job(db=db, job_id=job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Construct path to PDF report
+    video_path = PathLib(job.video_filename)
+    output_dir = video_path.parent / "output" / str(job.id)
+    output_pdf_path = output_dir / f"{video_path.stem}.pdf"
+    
+    if not output_pdf_path.exists():
+        raise HTTPException(status_code=404, detail="PDF report not found")
+    
+    return FileResponse(
+        path=output_pdf_path,
+        media_type="application/pdf",
+        filename=f"report_{video_path.stem}.pdf"
+    )
 
 @router.get("/video/{job_id}")
 async def get_processed_video(job_id: uuid.UUID, db: Session = Depends(get_db)):

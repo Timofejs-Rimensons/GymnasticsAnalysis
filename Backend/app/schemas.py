@@ -31,6 +31,9 @@ class StatusResponse(BaseModel):
     status: str
     progress: int | None = 0
 
+class ProcessRequest(BaseModel):
+    exercise_name: str
+
 # Authentication Schemas
 class UserRegister(BaseModel):
     username: str
