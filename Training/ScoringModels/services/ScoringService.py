@@ -328,11 +328,16 @@ class ScoringService:
             print(f"Model saved to {path}")
     
     def load_model(self, path):
-        if self.model is None:
-            if self.input_size is None:
-                raise RuntimeError("Cannot load model without knowing input size. Train a model first or specify input_size.")
-            self._build_model(self.input_size)
+        # If model is not built yet, ensure input_size is known.
+        # It's expected that input_size will be provided during ScoringService init or via _build_model before this.
+        if self.input_size is None:
+            raise RuntimeError("Cannot load model: input_size is not set. It must be provided during service initialization or explicitly set before loading.")
+        
+        # Build the model with the correct input_size first
+        self._build_model(self.input_size)
+        
+        # Load only the state_dict into the correctly built model
         self.model = torch.load(path, map_location=self.device, weights_only=False)
         self.model.eval()
         if self.verbose:
-            print(f"Model loaded from {path}")
+            print(f"Model loaded from {path} with input_size {self.input_size}")

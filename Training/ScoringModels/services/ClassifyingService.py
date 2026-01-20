@@ -385,21 +385,48 @@ class ClassifyingService:
             total_samples += len(batch_y)
         
         return total_loss / total_samples, total_correct / total_samples
-    
+
+    def _filter_short_poses(self, predictions, min_duration):
+        """Merges pose segments that are shorter than min_duration."""
+        if min_duration is None or min_duration <= 1:
+            return predictions
+
+        new_predictions = predictions.copy()
+        num_frames = len(new_predictions)
+        i = 0
+        while i < num_frames:
+            current_pose = new_predictions[i]
+            j = i
+            while j < num_frames and new_predictions[j] == current_pose:
+                j += 1
+            
+            duration = j - i
+            if duration < min_duration:
+                # Merge with the previous pose if it's not the first segment
+                if i > 0:
+                    prev_pose = new_predictions[i - 1]
+                    for k in range(i, j):
+                        new_predictions[k] = prev_pose
+            i = j
+        return new_predictions
+
     @torch.no_grad()
-    def predict_frames(self, x, return_probabilities=True, return_attention=False):
+    def predict_frames(self, x, return_probabilities=True, return_attention=False, smoothing_window=20, min_pose_duration=10, inertia_factor=0.5):
         """
         Predict per-frame labels for sequences using sliding windows.
         
         Args:
             x: List of sequences, each of shape (num_frames, num_features)
-            return_probabilities: Whether to return class probabilities
-            return_attention: Whether to return attention weights
-        
+            return_probabilities: Whether to return class probabilities.
+            return_attention: Whether to return attention weights.
+            smoothing_window: Size of the window for probability smoothing.
+            min_pose_duration: Minimum number of consecutive frames for a pose to be kept.
+            inertia_factor: Factor to boost probabilities based on the previous frame's prediction.
+
         Returns:
-            predictions: List of per-frame predictions for each sequence
-            probabilities: (optional) List of per-frame probability distributions
-            attention: (optional) Dict with temporal and joint attention for each window
+            predictions: List of per-frame predictions for each sequence.
+            probabilities: (optional) List of per-frame probability distributions.
+            attention: (optional) Dict with temporal and joint attention for each window.
         """
         self._check_fitted()
         self.model.eval()
@@ -424,7 +451,6 @@ class ClassifyingService:
             # Predict in batches
             seq_predictions = np.zeros(num_frames, dtype=np.int32)
             seq_probabilities = np.zeros((num_frames, self.num_classes)) if return_probabilities else None
-            seq_counts = np.zeros(num_frames)  # For averaging overlapping predictions
             
             for batch_start in range(0, len(windows), self.batch_size):
                 batch_end = min(batch_start + self.batch_size, len(windows))
@@ -448,7 +474,6 @@ class ClassifyingService:
                         seq_predictions[frame_idx] = preds[i]
                         if return_probabilities:
                             seq_probabilities[frame_idx] = probs[i]
-                        seq_counts[frame_idx] += 1
                 
                 # Store attention if requested
                 if return_attention:
@@ -457,9 +482,18 @@ class ClassifyingService:
                     if joint_weights is not None:
                         all_attention['joint'].extend(joint_weights.cpu().numpy())
             
-            # Handle overlapping predictions if stride < window_size
-            # (already handled by overwriting, but could average if needed)
-            
+            if return_probabilities: # Always apply inertia if probabilities are returned
+                seq_probabilities = self._apply_temporal_inertia(
+                    seq_probabilities, 
+                    smoothing_window=smoothing_window,
+                    inertia_factor=inertia_factor
+                )
+                seq_predictions = np.argmax(seq_probabilities, axis=1)
+
+            # Post-process to remove short pose segments
+            if min_pose_duration:
+                seq_predictions = self._filter_short_poses(seq_predictions, min_pose_duration)
+
             all_predictions.append(seq_predictions)
             if return_probabilities:
                 all_probabilities.append(seq_probabilities)
@@ -471,7 +505,43 @@ class ClassifyingService:
             results.append(all_attention)
         
         return tuple(results) if len(results) > 1 else results[0]
-    
+
+    def _apply_temporal_inertia(self, probabilities, smoothing_window=3, inertia_factor=0.5):
+        """
+        Smooth probabilities and apply temporal inertia to resist switching.
+        
+        Args:
+            probabilities: (num_frames, num_classes) array of probabilities.
+            smoothing_window: Size of the window for initial smoothing.
+            inertia_factor: Factor to boost probabilities based on the previous frame's prediction.
+            
+        Returns:
+            Adjusted probabilities.
+        """
+        num_frames, num_classes = probabilities.shape
+        
+        # 1. Initial Smoothing to reduce noise
+        if smoothing_window > 1:
+            smoothed_probs = np.zeros_like(probabilities)
+            for i in range(num_classes):
+                smoothed_probs[:, i] = np.convolve(probabilities[:, i], np.ones(smoothing_window)/smoothing_window, mode='same')
+        else:
+            smoothed_probs = probabilities.copy()
+        
+        # 2. Apply Temporal Inertia
+        adjusted_probs = smoothed_probs.copy()
+        
+        for i in range(1, num_frames):
+            # Boost current frame probabilities based on previous frame's adjusted probabilities
+            adjusted_probs[i] = adjusted_probs[i] + inertia_factor * adjusted_probs[i-1]
+            
+            # Re-normalize probabilities for the current frame
+            frame_sum = np.sum(adjusted_probs[i])
+            if frame_sum > 0:
+                adjusted_probs[i] /= frame_sum
+            
+        return adjusted_probs
+
     def evaluate(self, x_test, y_test, return_report=True):
         """
         Evaluate model performance on test sequences.
