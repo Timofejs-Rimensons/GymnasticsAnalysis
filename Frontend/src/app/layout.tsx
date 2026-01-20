@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   title: "Gymnastics Analysis | AI-Powered Movement Analysis",
   description:
     "Professional AI-powered gymnastics analysis for training optimization",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
