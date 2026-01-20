@@ -18,6 +18,7 @@ ENV NEXT_TELEMETRY_DISABLED 1
 
 # Generate Prisma Client
 RUN npx prisma generate
+RUN mkdir -p public
 RUN npm run build
 
 # Production image, copy all the files and run next
@@ -39,6 +40,7 @@ RUN mkdir .next && chown nextjs:nodejs .next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# user
 USER nextjs
 
 EXPOSE 80
