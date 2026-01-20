@@ -1,0 +1,9 @@
+# Ignore environment variables
+app/.env
+
+# Ignore alembic versions
+alembic/versions/*.pyc
+
+# Ignore pycache
+__pycache__/
+*.pyc

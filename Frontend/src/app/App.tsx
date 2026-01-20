@@ -1,8 +1,10 @@
-import { useState, useRef } from "react";
-import { Upload, Download, Video, Sun, Moon, HelpCircle, ArrowLeft, CheckCircle, XCircle, Loader, ChevronDown, AlertCircle } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Upload, Download, Video, Sun, Moon, HelpCircle, ArrowLeft, CheckCircle, XCircle, Loader, ChevronDown, AlertCircle, LogOut, History } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./components/ui/dialog";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { ApiService, StatusResponse, AnalysisResult, Pose } from "./services/api";
+import AuthPage from "./components/AuthPage";
+import HistoryPage from "./components/HistoryPage";
 
 // Handstand SVG Icon Component
 const HandstandIcon = ({ className }: { className?: string }) => (
@@ -25,6 +27,11 @@ interface VideoUpload {
 }
 
 export default function App() {
+  // Auth state
+  const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem("authToken"));
+  const [username, setUsername] = useState<string | null>(localStorage.getItem("username"));
+
+  // Video state
   const [videos, setVideos] = useState<VideoUpload[]>([]);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -32,7 +39,31 @@ export default function App() {
   const [showInstructions, setShowInstructions] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [showVideoSelector, setShowVideoSelector] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle auth success
+  const handleAuthSuccess = (token: string, user: string) => {
+    localStorage.setItem("authToken", token);
+    localStorage.setItem("username", user);
+    setAuthToken(token);
+    setUsername(user);
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("username");
+    setAuthToken(null);
+    setUsername(null);
+    setVideos([]);
+    setSelectedVideoId(null);
+  };
+
+  // If not authenticated, show auth page
+  if (!authToken || !username) {
+    return <AuthPage onAuthSuccess={handleAuthSuccess} theme={theme} />;
+  }
   
   const selectedVideo = videos.find(v => v.id === selectedVideoId);
   const resultsData = selectedVideo?.analysisResults;
@@ -112,9 +143,9 @@ export default function App() {
       // Fetch analysis results from backend
       if (status.status === "completed") {
         try {
-          const analysisResults = await ApiService.getResponseJson(videoId);
+          const jobResults = await ApiService.getResults(videoId);
           setVideos(prev => prev.map(v =>
-            v.id === videoId ? { ...v, analysisResults } : v
+            v.id === videoId ? { ...v, analysisResults: jobResults.results || undefined } : v
           ));
         } catch (error) {
           console.error("Error fetching analysis results:", error);
@@ -148,8 +179,8 @@ export default function App() {
       if (file && file.type.startsWith("video/")) {
         try {
           // Step 1: Upload video and get process ID
-          const uploadResponse = await ApiService.uploadVideo(file);
-          const videoId = uploadResponse.pid;
+          const uploadResponse = await ApiService.uploadVideo(file, selectedOption || "handstand", authToken!);
+          const videoId = uploadResponse.id;
 
           const newVideo: VideoUpload = {
             id: videoId,
@@ -208,8 +239,8 @@ export default function App() {
       if (file && file.type.startsWith("video/")) {
         try {
           // Step 1: Upload video and get process ID
-          const uploadResponse = await ApiService.uploadVideo(file);
-          const videoId = uploadResponse.pid;
+          const uploadResponse = await ApiService.uploadVideo(file, selectedOption || "handstand", authToken!);
+          const videoId = uploadResponse.id;
 
           const newVideo: VideoUpload = {
             id: videoId,
@@ -345,7 +376,7 @@ export default function App() {
       {/* Theme Toggle Button */}
       <button
         onClick={toggleTheme}
-        className={`fixed top-8 right-8 z-50 p-4 rounded-2xl backdrop-blur-xl transition-all duration-300 hover:scale-110 shadow-2xl ${
+        className={`fixed top-8 right-24 z-50 p-4 rounded-2xl backdrop-blur-xl transition-all duration-300 hover:scale-110 shadow-2xl ${
           theme === "dark"
             ? "bg-white/10 border border-white/20 hover:bg-white/20"
             : "bg-blue-500/10 border border-blue-500/30 hover:bg-blue-500/20"
@@ -358,6 +389,54 @@ export default function App() {
         )}
       </button>
 
+      {/* History Button */}
+      <button
+        onClick={() => setShowHistory(true)}
+        className={`fixed top-8 right-44 z-50 p-4 rounded-2xl backdrop-blur-xl transition-all duration-300 hover:scale-110 shadow-2xl ${
+          theme === "dark"
+            ? "bg-white/10 border border-white/20 hover:bg-white/20"
+            : "bg-blue-500/10 border border-blue-500/30 hover:bg-blue-500/20"
+        }`}
+      >
+        <History className={`w-6 h-6 ${theme === "dark" ? "text-blue-300" : "text-blue-600"}`} />
+      </button>
+
+      {/* Logout Button */}
+      <button
+        onClick={handleLogout}
+        className={`fixed top-8 right-8 z-50 p-4 rounded-2xl backdrop-blur-xl transition-all duration-300 hover:scale-110 shadow-2xl flex items-center gap-2 ${
+          theme === "dark"
+            ? "bg-white/10 border border-white/20 hover:bg-red-500/30"
+            : "bg-red-500/10 border border-red-500/30 hover:bg-red-500/20"
+        }`}
+      >
+        <LogOut className={`w-5 h-5 ${theme === "dark" ? "text-red-300" : "text-red-600"}`} />
+        <span className={`text-sm font-medium ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+          {username}
+        </span>
+      </button>
+
+      {/* History Page Modal */}
+      {showHistory && (
+        <div className="fixed inset-0 z-40 bg-black/50">
+          <div className="w-full h-full">
+            <HistoryPage authToken={authToken!} />
+            <button
+              onClick={() => setShowHistory(false)}
+              className={`fixed bottom-8 left-8 z-50 p-4 rounded-2xl backdrop-blur-xl transition-all duration-300 hover:scale-110 shadow-2xl ${
+                theme === "dark"
+                  ? "bg-white/10 border border-white/20 hover:bg-white/20"
+                  : "bg-blue-500/10 border border-blue-500/30 hover:bg-blue-500/20"
+              }`}
+            >
+              <ArrowLeft className={`w-6 h-6 ${theme === "dark" ? "text-white" : "text-blue-600"}`} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!showHistory && (
+      <>
       {/* Main Content */}
       <div className="relative z-10 container mx-auto px-6 py-16 max-w-4xl">
         {/* Option Selection Screen */}
@@ -1160,6 +1239,8 @@ export default function App() {
           </>
         )}
       </div>
+      </>
+      )}
 
       {/* Instructions Dialog */}
       <Dialog open={showInstructions} onOpenChange={setShowInstructions}>

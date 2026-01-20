@@ -1,19 +1,28 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
-export interface UploadResponse {
-  pid: string;
-  message?: string;
+// --- NEW API INTERFACES ---
+
+export interface AnalysisJob {
+  id: string; // This is the UUID, now called jobId
+  video_filename: string;
+  status: "uploaded" | "processing" | "completed" | "failed";
+  results: AnalysisResult | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface StatusResponse {
-  status: "pending" | "processing" | "completed" | "failed";
-  progress: number | boolean;
-  error_message?: string;
+  status: "uploaded" | "processing" | "completed" | "failed";
+  progress: number;
 }
 
 export interface ProcessRequest {
-  exercise_name: string;
+  // The new process endpoint doesn't require a body,
+  // but we'll keep this for potential future use.
+  exercise_name?: string; 
 }
+
+// --- EXISTING DATA STRUCTURES (ASSUMED UNCHANGED) ---
 
 export interface Pose {
   name: string;
@@ -35,13 +44,73 @@ export interface AnalysisResult {
   categories: CategoryScore[];
 }
 
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: UserResponse;
+}
+
+export interface UserResponse {
+  id: string;
+  username: string;
+  email: string;
+  created_at: string;
+}
+
 export class ApiService {
-  static async uploadVideo(file: File): Promise<UploadResponse> {
+  /**
+   * Register a new user.
+   */
+  static async register(username: string, email: string, password: string): Promise<UserResponse> {
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ username, email, password }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Registration failed" }));
+      throw new Error(error.detail || `Registration error: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Login user and get access token.
+   */
+  static async login(username: string, password: string): Promise<TokenResponse> {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ username, password }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Login failed" }));
+      throw new Error(error.detail || `Login error: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Uploads a video and returns the created analysis job.
+   */
+  static async uploadVideo(file: File, exerciseName: string, token: string): Promise<AnalysisJob> {
     const formData = new FormData();
     formData.append("video", file);
+    formData.append("exercise_name", exerciseName);
 
     const response = await fetch(`${API_BASE_URL}/upload`, {
       method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+      },
       body: formData,
     });
 
@@ -54,16 +123,18 @@ export class ApiService {
 
     return response.json();
   }
-  static async startProcessing(
-    pid: string,
-    exercise_name: string
-  ): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/process/${pid}`, {
+
+  /**
+   * Triggers the processing for a given job ID.
+   */
+  static async startProcessing(jobId: string): Promise<AnalysisJob> {
+    const response = await fetch(`${API_BASE_URL}/process/${jobId}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ exercise_name: exercise_name }),
+      // The new endpoint doesn't require a body, but we send an empty one.
+      body: JSON.stringify({}), 
     });
 
     if (!response.ok) {
@@ -72,10 +143,14 @@ export class ApiService {
         .catch(() => ({ detail: "Processing request failed" }));
       throw new Error(error.detail || "Failed to trigger processing");
     }
+    return response.json();
   }
 
-  static async getStatus(pid: string): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/status/${pid}`);
+  /**
+   * Retrieves the current status of an analysis job.
+   */
+  static async getStatus(jobId: string): Promise<StatusResponse> {
+    const response = await fetch(`${API_BASE_URL}/status/${jobId}`);
 
     if (!response.ok) {
       const error = await response
@@ -84,55 +159,32 @@ export class ApiService {
       throw new Error(error.detail || "Failed to check status");
     }
     
-    const rawData = await response.json();
-    
-    // Adapt backend "0-1" status to frontend Expected format
-    if (typeof rawData.status === 'number' || typeof rawData.status === 'boolean') {
-      const val = Number(rawData.status);
-      // Assuming 1 (or close to 1) is completed
-      if (val >= 1) {
-        return {
-          status: "completed",
-          progress: 100
-        };
-      } 
-      // Assuming 0 is pending/processing
-      return {
-        status: "processing",
-        progress: Math.round(val * 100)
-      };
-    }
-
-    return rawData;
+    return response.json();
   }
 
+  /**
+   * Polls the status endpoint until the job is completed or fails.
+   */
   static async pollUntilComplete(
-    pid: string,
+    jobId: string,
     interval = 2000
   ): Promise<StatusResponse> {
     return new Promise<StatusResponse>((resolve, reject) => {
       const checkStatus = async () => {
         try {
-          const res = await this.getStatus(pid);
+          const res = await this.getStatus(jobId);
 
-          // Completed: resolve with the full status payload
-          if (
-            res.status === "completed" ||
-            res.progress === true ||
-            res.progress === 1 || // if server uses 0/1
-            res.progress === 100 // if server uses percentage
-          ) {
+          if (res.status === "completed") {
             resolve(res);
             return;
           }
 
-          // Failed: reject with server-provided error
           if (res.status === "failed") {
-            reject(new Error(res.error_message || "Processing failed"));
+            reject(new Error("Processing failed"));
             return;
           }
 
-          // Still pending/processing: poll again
+          // Still "uploaded" or "processing": poll again
           setTimeout(checkStatus, interval);
         } catch (err) {
           reject(err);
@@ -143,23 +195,64 @@ export class ApiService {
     });
   }
 
-  static async getResponseJson(pid: string): Promise<AnalysisResult> {
-    const response = await fetch(`${API_BASE_URL}/download/json/${pid}`);
+  /**
+   * Fetches the final analysis results for a completed job.
+   */
+  static async getResults(jobId: string): Promise<AnalysisJob> {
+    const response = await fetch(`${API_BASE_URL}/results/${jobId}`);
     if (!response.ok) {
       const error = await response
         .json()
         .catch(() => ({ detail: "Failed to fetch analysis result" }));
       throw new Error(error.detail || "Failed to fetch analysis result");
     }
-    const data: AnalysisResult = await response.json();
-    return data;
+    return response.json();
   }
 
-  static getDownloadUrl(pid: string): string {
-    return `${API_BASE_URL}/download/video/${pid}`;
+  /**
+   * Fetches user's analysis history (all jobs).
+   */
+  static async getHistory(token: string): Promise<AnalysisJob[]> {
+    const response = await fetch(`${API_BASE_URL}/history`, {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Failed to fetch history" }));
+      throw new Error(error.detail || "Failed to fetch history");
+    }
+
+    return response.json();
   }
 
-  static getReportPdfUrl(pid: string): string {
-    return `${API_BASE_URL}/download/pdf/${pid}`;
+  /**
+   * Retrieves the processed video URL with skeleton visualization.
+   */
+  static getProcessedVideoUrl(jobId: string): string {
+    return `${API_BASE_URL}/video/${jobId}`;
+  }
+
+  // The following methods are now deprecated as the new API flow
+  // does not provide direct download links for video/PDF.
+  // This functionality should be re-implemented based on where the
+  // backend stores the processed files (e.g., S3 URLs in the 'results' JSON).
+
+  /**
+   * @deprecated Use getProcessedVideoUrl instead
+   */
+  static getDownloadUrl(jobId: string): string {
+    return this.getProcessedVideoUrl(jobId);
+  }
+
+  /**
+   * @deprecated Re-implement based on file storage strategy (e.g., get URL from results).
+   */
+  static getReportPdfUrl(jobId: string): string {
+    console.warn("getReportPdfUrl is deprecated. PDF URL should be retrieved from job results.");
+    return `#`;
   }
 }

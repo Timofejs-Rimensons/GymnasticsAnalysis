@@ -1,278 +1,216 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form, BackgroundTasks, Path
-from pydantic import BaseModel
-import json
-from fastapi.responses import FileResponse
-from pathlib import Path as PathLib
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks, Path, Form
+from sqlalchemy.orm import Session
 import uuid
-import os
-import time
+from pathlib import Path as PathLib
 import shutil
+from datetime import datetime
 
+import schemas
+from database import get_db
+from repositories.analysis_job_repository import analysis_job_repo
 from services.ProcessingPipelineService import ProcessingPipelineService
+from auth import get_current_user
+from models.user import User
 
 router = APIRouter()
 processing_pipeline_service = ProcessingPipelineService()
 
-BASE_DIR = PathLib(__file__).resolve().parent.parent
-TEMP_DIR = BASE_DIR / ".temp"
+# Exercise mapping
+EXERCISE_MAP = {
+    "handstand": 1,
+    "straddle_jump": 2,
+    "straddle jump": 2
+}
 
-TEMP_DIR.mkdir(parents=True, exist_ok=True)
+# A temporary directory for video uploads before processing.
+# In a production environment, this should be a managed file store like S3.
+TEMP_VIDEO_DIR = PathLib(__file__).resolve().parent.parent / ".temp_videos"
+TEMP_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 
+def cleanup_temp_video_file(path: PathLib):
+    """Safely removes a file."""
+    if path.exists() and path.is_file():
+        path.unlink()
 
-def cleanup_directory(path: PathLib):
-    """
-    Safely and recursively removes a directory.
-    """
-    if path.exists() and path.is_dir():
-        shutil.rmtree(path)
-
-def cleanup_inactive_directories(ttl_seconds: int = 300):
-    """
-    Scans the temp directory and removes inactive process folders.
-    """
-    now = time.time()
-    if not TEMP_DIR.exists():
-        return
-
-    for process_dir in TEMP_DIR.iterdir():
-        if not process_dir.is_dir():
-            continue
-
-        status_json_path = process_dir / "status.json"
-        if not status_json_path.exists():
-            if now - process_dir.stat().st_mtime > ttl_seconds:
-                cleanup_directory(process_dir)
-            continue
-
-        try:
-            with open(status_json_path, 'r') as f:
-                status_data = json.load(f)
-
-            status = status_data.get('status', 'unknown')
-            if status == 'processing':
-                continue
-
-            last_accessed = status_data.get('last_accessed_at', 0)
-            if now - last_accessed > ttl_seconds:
-                cleanup_directory(process_dir)
-
-        except (json.JSONDecodeError, FileNotFoundError):
-            if now - process_dir.stat().st_mtime > ttl_seconds:
-                cleanup_directory(process_dir)
-            continue
-
-
-
-@router.post("/upload")
+@router.post("/upload", response_model=schemas.AnalysisJob)
 async def upload_video(
-    background_tasks: BackgroundTasks, 
-    video: UploadFile = File(...)
+    background_tasks: BackgroundTasks,
+    video: UploadFile = File(...),
+    exercise_name: str = Form(default="handstand"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Uploads a video of a gymnastics exercise.
-    Also triggers a cleanup of old, inactive directories.
+    Uploads a video for analysis.
+    This creates a new analysis job record in the database.
+    The video is stored temporarily and will be deleted after processing.
     """
-    background_tasks.add_task(cleanup_inactive_directories)
-
     if not video.filename.lower().endswith((".mp4", ".mov", ".avi", ".mkv")):
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
-    process_id = str(uuid.uuid4())
-    process_dir = TEMP_DIR / process_id
-    process_dir.mkdir(parents=True, exist_ok=True)
+    # Get exercise ID from mapping
+    exercise_id = EXERCISE_MAP.get(exercise_name.lower(), 1)
     
-    status_json_path = process_dir / "status.json"
-
-    input_folder = process_dir / "input" 
-    input_folder.mkdir(parents=True, exist_ok=True)
+    # Create filename with exercise name, time, and date format: exercise_HH:MM_dd-mm (using dash instead of slash)
+    today = datetime.now()
+    time_str = today.strftime("%H:%M")
+    date_str = today.strftime("%d-%m")
+    file_ext = PathLib(video.filename).suffix
+    new_filename = f"{exercise_name}_{time_str}_{date_str}{file_ext}"
     
-    input_video_path = input_folder / video.filename
+    # Store video file temporarily with new filename
+    video_id = str(uuid.uuid4())
+    video_path = TEMP_VIDEO_DIR / f"{video_id}_{new_filename}"
+    with video_path.open("wb") as buffer:
+        shutil.copyfileobj(video.file, buffer)
 
-    with input_video_path.open("wb") as buffer:
-        buffer.write(await video.read())
-        
-    now = time.time()
-    status_data = {
-        "filename": video.filename,
-        "status": "pending",
-        "progress": 0,
-        "created_at": now,
-        "last_accessed_at": now
-    }
-    with open(status_json_path, 'w') as status_file:
-        json.dump(status_data, status_file)
+    # Read video blob for storage
+    with open(video_path, 'rb') as f:
+        video_blob = f.read()
 
-    return {
-        "status": "success",
-        "pid": process_id
-    }
+    # Create job record in the database with user_id, exercise_id and video_blob
+    job = analysis_job_repo.create_job(
+        db, 
+        video_filename=str(video_path),
+        exercise_id=exercise_id,
+        video_blob=video_blob,
+        user_id=current_user.id
+    )
     
+    return job
 
-
-class ProcessConfig(BaseModel):
-    exercise_name: str
-    
-@router.post("/process/{process_id}")
+@router.post("/process/{job_id}", response_model=schemas.AnalysisJob)
 async def process_video(
-    process_config: ProcessConfig,
-    process_id: str = Path(..., description="Process id, assigned upon /upload")
+    background_tasks: BackgroundTasks,
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db)
 ):
     """
-    Processes video uploaded previously according to specified exercise.
-    Updates the 'last_accessed_at' timestamp for the process directory.
+    Starts the analysis process for a given job_id.
     """
-    process_dir = TEMP_DIR / process_id
-    if not process_dir.exists():
-        raise(HTTPException(status_code=400, detail=f"Process id [{process_id}] is incorrect or process is already cleared."))
+    job = analysis_job_repo.get_job(db, job_id=job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status != 'uploaded':
+        raise HTTPException(status_code=400, detail=f"Job has status '{job.status}' and cannot be processed.")
+
+    analysis_job_repo.update_job_status(db, job_id=job_id, status='processing')
+
+    # Define paths for output files
+    video_path = PathLib(job.video_filename)
+    output_dir = video_path.parent / "output" / str(job.id)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    status_json_path = process_dir / "status.json"
+    output_json_path = output_dir / "results.json"
+    
+    # In a real system, these would be uploaded to a file store (e.g., S3)
+    # and their URLs would be saved in the results.
+    output_video_path = output_dir / video_path.name
+    output_pdf_path = output_dir / f"{video_path.stem}.pdf"
 
     try:
-        with open(status_json_path, 'r+') as f:
-            status_data = json.load(f)
-            status_data['last_accessed_at'] = time.time()
-            f.seek(0)
-            json.dump(status_data, f)
-            f.truncate()
-    except (json.JSONDecodeError, FileNotFoundError):
-        pass
-    
-    try:
-        with open(status_json_path, 'r') as f:
-            status_data = json.load(f)
-    except:
-        raise(HTTPException(status_code=400, detail=f"Process id [{process_id}] is incorrect or process is already cleared."))
+        # The processing service needs to be adapted to not use a status file.
+        # For now, we assume it runs and puts the result in output_json_path.
+        # We will mock the behavior of the processing service for now.
+        
+        # Call the actual analysis function with MediaPipe
+        processing_pipeline_service.analyze_video(
+            input_video_path=str(video_path),
+            output_video_path=str(output_video_path),
+            output_pdf_path=str(output_pdf_path),
+            output_json_path=str(output_json_path),
+            exercise_name="handstand",
+            status_json_path=str(output_dir / "status.json")
+        )
 
-    video_name = status_data["filename"]
-    
-    
-    output_folder = process_dir / "output"
-    output_folder.mkdir(parents=True, exist_ok=True)
-    
-    no_ext_name = video_name.split('.')[0]
-    input_video_path = process_dir / "input" / video_name
-    output_video_path = process_dir / "output" / video_name
-    output_json_path = process_dir / "output" / f"{no_ext_name}.json"
-    output_pdf_path = process_dir / "output" / f"{no_ext_name}.pdf"
-    
-    exercise_name = process_config.model_dump().get("exercise_name", None)
-    
-    if not exercise_name:
-        raise(HTTPException(status_code=500, detail=f"exercise_name was not found in payload."))
-    
-    try:
-        with open(status_json_path, 'r+') as f:
-            status_data = json.load(f)
-            status_data['status'] = 'processing'
-            status_data['last_accessed_at'] = time.time()
-            f.seek(0)
-            json.dump(status_data, f)
-            f.truncate()
+        # Once processing is done, read results and update the job
+        with open(output_json_path, 'r') as f:
+            import json
+            results_data = json.load(f)
 
-        processing_pipeline_service.analyze_video(input_video_path=input_video_path,
-                                                    output_video_path=output_video_path,
-                                                    output_json_path=output_json_path,
-                                                    output_pdf_path=output_pdf_path,
-                                                    exercise_name=exercise_name,
-                                                    status_json_path=status_json_path)
-    except:
-        with open(status_json_path, 'w') as status_file:
-            try:
-                with open(status_json_path, 'r') as f:
-                    status_data = json.load(f)
-            except:
-                status_data = {}
-            status_data['status'] = 'failed'
-            status_data['progress'] = 0
-            status_data['last_accessed_at'] = time.time()
-            json.dump(status_data, status_file)
-        raise(HTTPException(status_code=500, detail="Error during video processing."))
-    
-    try:
-        with open(status_json_path, 'r+') as f:
-            status_data = json.load(f)
-            status_data['last_accessed_at'] = time.time()
-            f.seek(0)
-            json.dump(status_data, f)
-            f.truncate()
-    except (json.JSONDecodeError, FileNotFoundError):
-        pass
+        job = analysis_job_repo.update_job_results(db, job_id=job_id, results=results_data, status='completed')
 
-    return {
-        "status": "success",
-        "pid": process_id
-    }
+    except Exception as e:
+        analysis_job_repo.update_job_results(db, job_id=job_id, results={"error": str(e)}, status='failed')
+        raise HTTPException(status_code=500, detail=f"Error during video processing: {e}")
+    finally:
+        # Clean up the temporary uploaded video file
+        background_tasks.add_task(cleanup_temp_video_file, PathLib(job.video_filename))
+
+    return job
+
+@router.get("/status/{job_id}", response_model=schemas.StatusResponse)
+async def get_status(job_id: uuid.UUID, db: Session = Depends(get_db)):
+    """
+    Retrieves the current status of an analysis job.
+    """
+    job = analysis_job_repo.get_job(db, job_id=job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Progress can be added to the model and updated during processing
+    return {"status": job.status, "progress": 0}
 
 
-@router.get("/status/{process_id}")
-async def get_status(
-    process_id: str = Path(..., description="Process id, assigned upon /upload")
+@router.get("/results/{job_id}", response_model=schemas.AnalysisJob)
+async def get_results(job_id: uuid.UUID, db: Session = Depends(get_db)):
+    """
+    Retrieves the results of a completed analysis job.
+    """
+    job = analysis_job_repo.get_job(db, job_id=job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != 'completed':
+        raise HTTPException(status_code=400, detail=f"Job status is '{job.status}'. Results are not available.")
+        
+    return job
+
+@router.get("/video/{job_id}")
+async def get_processed_video(job_id: uuid.UUID, db: Session = Depends(get_db)):
+    """
+    Serves the processed video with skeleton visualization.
+    """
+    from fastapi.responses import FileResponse
+    
+    job = analysis_job_repo.get_job(db=db, job_id=job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Construct path to processed video
+    video_path = PathLib(job.video_filename)
+    output_dir = video_path.parent / "output" / str(job.id)
+    output_video_path = output_dir / video_path.name
+    
+    if not output_video_path.exists():
+        raise HTTPException(status_code=404, detail="Processed video not found")
+    
+    return FileResponse(
+        path=output_video_path,
+        media_type="video/mp4",
+        filename=f"processed_{video_path.name}"
+    )
+
+@router.get("/history", response_model=list[schemas.AnalysisJob])
+async def get_user_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    process_dir = TEMP_DIR / process_id
-    status_json_path = process_dir / "status.json"
-    
-    try:
-        with open(status_json_path, 'r') as f:
-            status_data = json.load(f)
-    except:
-        raise(HTTPException(status_code=400, detail=f"Process id [{process_id}] is incorrect or process is already cleared."))
-    
-    return status_data
-    
-    
-@router.get("/download/{type}/{process_id}")
-async def download_output(
-    type: str = Path(..., description="Type of file: video/json/pdf"),
-    process_id: str = Path(..., description="Process id, assigned upon /upload")
-):
-    process_dir = TEMP_DIR / process_id
-    if not process_dir.exists():
-        raise HTTPException(status_code=400, detail=f"Process id [{process_id}] is incorrect or process is already cleared.")
-    
-    status_json_path = process_dir / "status.json"
+    """
+    Retrieves all analysis jobs for the current user, ordered by most recent first.
+    """
+    jobs = analysis_job_repo.get_user_jobs(db, user_id=current_user.id)
+    return jobs
 
+@router.get("/health")
+def health_check(db: Session = Depends(get_db)):
+    """
+    Health check endpoint that verifies the API and database connectivity.
+    """
     try:
-        with open(status_json_path, 'r+') as f:
-            status_data = json.load(f)
-            status_data['last_accessed_at'] = time.time()
-            f.seek(0)
-            json.dump(status_data, f)
-            f.truncate()
-    except (json.JSONDecodeError, FileNotFoundError):
-        pass
-    
-    try:
-        with open(status_json_path, 'r') as f:
-            status_data = json.load(f)
-    except:
-        raise HTTPException(status_code=400, detail=f"Process id [{process_id}] is incorrect or process is already cleared.")
-    
-    video_name = status_data.get("filename")
-    if not video_name:
-        raise HTTPException(status_code=500, detail="Original video filename not found in status data.")
-
-    no_ext_name = video_name.split('.')[0]
-    output_dir = process_dir / "output"
-    
-    if type == 'json':
-        output_path = output_dir / f"{no_ext_name}.json"
-        if not output_path.exists():
-            raise HTTPException(status_code=404, detail=f"JSON output for process {process_id} not found.")
-        with open(output_path, 'r') as f:
-            processed_data = json.load(f)
-        return processed_data
-    
-    elif type == 'video':
-        output_path = output_dir / video_name
-        if not output_path.exists():
-            raise HTTPException(status_code=404, detail=f"Video output for process {process_id} not found.")
-        return FileResponse(output_path, media_type="video/mp4", filename=video_name)
-    
-    elif type == 'pdf':
-        output_path = output_dir / f"{no_ext_name}.pdf"
-        if not output_path.exists():
-            raise HTTPException(status_code=404, detail=f"PDF output for process {process_id} not found.")
-        return FileResponse(output_path, media_type="application/pdf", filename=f"{no_ext_name}.pdf")
-    
-    else:
-        raise HTTPException(status_code=400, detail=f"Type '{type}' is not supported. Use one of these: video/json/pdf.")    
+        # Try to connect to the database
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "connected"}
+    except Exception as e:
+        return {"status": "error", "database": "disconnected", "error": str(e)}

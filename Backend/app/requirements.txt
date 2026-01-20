@@ -76,3 +76,15 @@ unicorn==2.1.4
 urllib3==2.6.3
 uvicorn==0.40.0
 wcwidth==0.2.14
+
+# Database dependencies
+sqlalchemy
+psycopg2-binary
+alembic
+python-dotenv
+
+# Authentication dependencies
+bcrypt
+python-jose[cryptography]
+passlib[bcrypt]
+

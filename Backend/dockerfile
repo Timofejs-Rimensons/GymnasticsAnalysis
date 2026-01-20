@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libgl1 \
     ffmpeg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
     
 WORKDIR /app
@@ -16,7 +17,19 @@ COPY ./app/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy alembic configuration and migrations
+COPY ./alembic ./alembic
+COPY ./alembic.ini .
 
 COPY ./app .
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Create entrypoint script to run migrations and start app
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "Running database migrations..."\n\
+alembic upgrade head\n\
+echo "Starting application..."\n\
+exec uvicorn main:app --host 0.0.0.0 --port 8000\n\
+' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]
