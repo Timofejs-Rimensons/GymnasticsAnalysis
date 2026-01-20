@@ -482,3 +482,6 @@ lerna-debug.log*
 !.vscode/launch.json
 !.vscode/settings.json
 !.vscode/tasks.json
+
+Labeling
+.claude
