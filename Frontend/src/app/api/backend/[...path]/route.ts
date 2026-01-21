@@ -7,10 +7,14 @@ async function handler(req: NextRequest, props: { params: Promise<{ path: string
   const params = await props.params;
   const path = params.path.join("/");
   
+  // Public endpoints that don't require authentication
+  const publicPaths = ["upload", "status", "process", "download", "analyze"];
+  const isPublicPath = publicPaths.some(publicPath => path.startsWith(publicPath));
+  
   // Get raw JWT token from session
   const token = await getToken({ req, raw: true });
 
-  if (!token) {
+  if (!token && !isPublicPath) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -21,7 +25,9 @@ async function handler(req: NextRequest, props: { params: Promise<{ path: string
   if (req.headers.get("content-type")) {
       headers.set("content-type", req.headers.get("content-type")!);
   }
-  headers.set("Authorization", `Bearer ${token}`);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
 
   const body = req.method !== "GET" && req.method !== "HEAD" ? await req.blob() : undefined;
 
