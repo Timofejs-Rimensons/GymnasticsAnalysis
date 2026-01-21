@@ -100,7 +100,7 @@ class MediapipeSegmentationRepository:
     # Video processing
     # ------------------------------------------------------------ #
 
-    def process_video(self, input_video_path):
+    def process_video_old(self, input_video_path):
         """
         Processes a video to extract normalized pose data for each frame.
 
@@ -305,4 +305,81 @@ class MediapipeSegmentationRepository:
 
                 feature_tensor[frame_index, segment_index] = [similarity_to_torso, similarity_to_parent, similarity_to_gravity]
 
+        return frames, feature_tensor, mask
+    
+    def _normalize_world_pose(self, world_landmarks):
+        """
+        Extracts world landmarks and ensures they are in a (13, 3) array.
+        World landmarks are already centered at the hips (origin 0,0,0) 
+        and measured in meters, preserving aspect ratio.
+        """
+        if world_landmarks is None:
+            return None
+
+        # Extract only the 13 joints we care about
+        # world_landmarks.landmark[i] has .x, .y, .z in meters
+        world_coords = np.array([
+            [lm.x, lm.y, lm.z]
+            for lm in [world_landmarks.landmark[i] for i in self.joint_ids]
+        ])
+
+        return world_coords
+
+    def process_video(self, input_video_path):
+        video_capture = cv2.VideoCapture(input_video_path)
+        if not video_capture.isOpened():
+            raise IOError(f"Cannot open video: {input_video_path}")
+
+        frame_width = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        frames = []
+        world_poses = []
+
+        while video_capture.isOpened():
+            success, frame = video_capture.read()
+            if not success: break
+
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = self.pose.process(frame_rgb)
+
+            # Get world pose for analytics
+            world_pose = self._normalize_world_pose(result.pose_world_landmarks)
+            
+            # Get normalized pose for visualization
+            normalized_pose, mid_hip_reference, bounding_box_size, min_coordinates = self._normalize_pose(
+                result.pose_landmarks,
+                frame_width,
+                frame_height
+            )
+
+            # Store both for analytics and visualization
+            frames.append({
+                "has_pose": world_pose is not None,
+                "world_pose": world_pose,
+                "pose_3d": normalized_pose,
+                "reference": mid_hip_reference,
+                "bbox_size": bounding_box_size,
+                "min_xy": min_coordinates
+            })
+
+            world_poses.append(world_pose)
+
+        video_capture.release()
+        
+        # Reuse your existing stacking logic
+        pose_tensor, mask = self._stack_tensor(world_poses)
+        return frames, pose_tensor, mask
+
+    def process_video_stgcn(self, input_video_path):
+        """
+        Returns features in (M, T, V, C) format for PYSKL using World Landmarks.
+        """
+        frames, pose_tensor, mask = self.process_video(input_video_path)
+        
+        if pose_tensor.size == 0:
+            return frames, np.array([]), mask
+
+        # Expand to (1, T, 13, 3) -> M, T, V, C
+        feature_tensor = np.expand_dims(pose_tensor, axis=0) 
         return frames, feature_tensor, mask

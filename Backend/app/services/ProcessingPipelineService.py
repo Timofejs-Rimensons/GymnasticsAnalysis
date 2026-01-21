@@ -8,6 +8,7 @@ from services.ClassifyingService import ClassifyingService
 from services.ScoringService import ScoringService
 from services.VisualisationService import save_visualized_video
 from services.PdfReportService import generate_pdf_report
+from services.PoseAnalyticsService import PoseAnalyticsService
 
 class ProcessingPipelineService:
     
@@ -17,6 +18,11 @@ class ProcessingPipelineService:
             
         self.improvement_needed_treshold = self.config.get("improvement_needed_treshold", 0)
         self.segmentation_repository = MediapipeSegmentationRepository()
+        
+        # Initialize analytics service
+        self.analytics_service = PoseAnalyticsService(
+            config=self.config.get('pose_criteria', {})
+        )
         
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -72,9 +78,22 @@ class ProcessingPipelineService:
             with open(status_json_path, 'w') as f:
                 json.dump({'status': status, 'progress': progress}, f)
 
-    def _structure_and_save_results(self, pose_scores_per_frame, output_json_path, output_pdf_path):
+    def _structure_and_save_results(self, pose_scores_per_frame, analytics_per_frame, output_json_path, output_pdf_path):
         all_poses = {}
-        for frame_scores in pose_scores_per_frame:
+        pose_analytics = {}  # Collect analytics by pose type
+        
+        for frame_idx, frame_scores in enumerate(pose_scores_per_frame):
+            phase_name = frame_scores.get('phase')
+            
+            # Collect analytics for this pose phase
+            if phase_name and phase_name != 'no_pose':
+                if analytics_per_frame and frame_idx < len(analytics_per_frame):
+                    analytics = analytics_per_frame[frame_idx]
+                    if analytics:
+                        if phase_name not in pose_analytics:
+                            pose_analytics[phase_name] = []
+                        pose_analytics[phase_name].append(analytics)
+            
             for pose_name, data in frame_scores.items():
                 if pose_name == 'phase':
                     continue
@@ -111,12 +130,19 @@ class ProcessingPipelineService:
         for pose, score in pose_scores.items():
             improvement_needed = bool(score < self.improvement_needed_treshold)
             
+            # Get aggregated analytics for this pose
+            pose_errors = []
+            if pose in pose_analytics:
+                aggregated = self.analytics_service.aggregate_frame_feedback(pose_analytics[pose])
+                pose_errors = aggregated.get('common_errors', [])
+            
             pose_categories.append({
                 "name": pose,
                 "score": round(score * individual_pose_max_score),
                 "max_score": round(individual_pose_max_score),
-                "description": "Placeholder description.",
-                "improvement_needed": improvement_needed
+                "description": f"Analysis of {pose} phase",
+                "improvement_needed": improvement_needed,
+                "errors": pose_errors
             })
             
         results = {
@@ -138,8 +164,11 @@ class ProcessingPipelineService:
     def process_video(self, video_path, exercise_config):
         frames_data, feature_tensor, mask = self.segmentation_repository.process_video_cosine_segments(video_path)
         
+        # Also get 3D world pose data for analytics
+        _, world_pose_tensor, _ = self.segmentation_repository.process_video(video_path)
+        
         if feature_tensor.shape[0] == 0:
-            return [], None, None, None
+            return [], None, None, None, None
         
         skeletons_masked = feature_tensor[mask]
         feature_0 = skeletons_masked[:, :, 0]
@@ -150,13 +179,15 @@ class ProcessingPipelineService:
         frame_poses = predictions[0]
         
         pose_scores_per_frame = []
-        segment_scores_per_frame = []  # NEW: Store segment scores separately
+        segment_scores_per_frame = []  # Store segment scores separately
+        analytics_per_frame = []  # Store analytics results
 
         class_names = list(exercise_config['poses'].keys())
         num_segments = feature_0.shape[1]  # Number of body segments
         
         original_frame_pose_names = ['no_pose'] * len(mask)
-        original_frame_segment_scores = [None] * len(mask)  # NEW: Track segment scores for all frames
+        original_frame_segment_scores = [None] * len(mask)
+        original_frame_analytics = [None] * len(mask)  # Track analytics for all frames
         
         mask_indices = np.where(mask)[0]
         for i, predicted_pose_idx in enumerate(frame_poses):
@@ -168,11 +199,12 @@ class ProcessingPipelineService:
             if pose_name == 'no_pose':
                 pose_scores_per_frame.append({'phase': 'no_pose'})
                 segment_scores_per_frame.append(None)
+                analytics_per_frame.append(None)
                 continue
 
             pose_info = exercise_config['poses'][pose_name]
             frame_scores = {'phase': pose_name}
-            current_segment_scores = {}  # NEW: Collect segment scores for this frame
+            current_segment_scores = {}  # Collect segment scores for this frame
             
             # Find the index in the masked skeleton array
             skeleton_in_valid_poses_idx = np.where(mask_indices == i)[0]
@@ -180,9 +212,13 @@ class ProcessingPipelineService:
             if skeleton_in_valid_poses_idx.size == 0:
                 pose_scores_per_frame.append(frame_scores)
                 segment_scores_per_frame.append(None)
+                analytics_per_frame.append(None)
                 continue
                 
             current_skeleton = skeletons[skeleton_in_valid_poses_idx[0]]
+            
+            # Get 3D world pose for this frame
+            current_world_pose = world_pose_tensor[i] if i < len(world_pose_tensor) else None
             
             if 'model_rel_path' in pose_info and pose_info['model_rel_path']:
                 scorer = self.scoring_models.get(pose_info['model_rel_path'])
@@ -239,11 +275,26 @@ class ProcessingPipelineService:
                 # Calculate parent score as mean of sub-pose scores
                 if frame_scores[pose_name]['sub_scores']:
                     frame_scores[pose_name]['score'] = np.mean(list(frame_scores[pose_name]['sub_scores'].values()))
+            
+            # Run analytics on this frame
+            analytics_result = None
+            if current_world_pose is not None:
+                try:
+                    analytics_result = self.analytics_service.analyze_pose(
+                        current_world_pose,
+                        pose_name
+                    )
+                    print(f"Frame {i}: {pose_name} - Analytics score: {analytics_result.get('score', 0):.2f}, Errors: {len(analytics_result.get('errors', []))}")
+                except Exception as e:
+                    print(f"Analytics error at frame {i}: {e}")
+            else:
+                print(f"Frame {i}: No world pose data available for analytics")
 
             pose_scores_per_frame.append(frame_scores)
             segment_scores_per_frame.append(current_segment_scores if current_segment_scores else None)
+            analytics_per_frame.append(analytics_result)
             
-        return pose_scores_per_frame, frames_data, segment_scores_per_frame, mask
+        return pose_scores_per_frame, frames_data, segment_scores_per_frame, mask, analytics_per_frame
 
     def analyze_video(self, input_video_path: str, output_video_path: str, output_pdf_path: str, output_json_path: str, exercise_name: str, status_json_path: str):
         input_video_path = str(input_video_path)
@@ -256,8 +307,8 @@ class ProcessingPipelineService:
         if not exercise_config:
             raise ValueError(f"Exercise '{exercise_name}' not found in config.")
 
-        # Updated to receive segment_scores_per_frame
-        pose_scores_per_frame, frames_data, segment_scores_per_frame, mask = self.process_video(input_video_path, exercise_config)
+        # Updated to receive analytics_per_frame
+        pose_scores_per_frame, frames_data, segment_scores_per_frame, mask, analytics_per_frame = self.process_video(input_video_path, exercise_config)
         
         if not pose_scores_per_frame:
             with open(output_json_path, 'w') as json_file:
@@ -266,7 +317,7 @@ class ProcessingPipelineService:
             self._update_status(status_json_path, "completed", 1)
             return
 
-        self._structure_and_save_results(pose_scores_per_frame, output_json_path, output_pdf_path)
+        self._structure_and_save_results(pose_scores_per_frame, analytics_per_frame, output_json_path, output_pdf_path)
 
         frame_annotations = []
         for idx, frame_scores in enumerate(pose_scores_per_frame):

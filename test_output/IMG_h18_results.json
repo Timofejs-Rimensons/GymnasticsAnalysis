@@ -1,0 +1,127 @@
+{
+    "overall_score": 55,
+    "max_score": 100.0,
+    "percentage": 54.85152280902737,
+    "categories": [
+        {
+            "name": "Poses",
+            "poses": [
+                {
+                    "name": "Landing",
+                    "score": 9,
+                    "max_score": 17,
+                    "description": "Analysis of Landing phase",
+                    "improvement_needed": false,
+                    "errors": [
+                        {
+                            "criterion": "knee_flexion",
+                            "severity": "medium",
+                            "measurement": "Knee angle at 151.7\u00b0",
+                            "improvement": "Bend your knees to absorb the landing impact",
+                            "frequency": 0.972972972972973
+                        }
+                    ]
+                },
+                {
+                    "name": "Starting",
+                    "score": 7,
+                    "max_score": 17,
+                    "description": "Analysis of Starting phase",
+                    "improvement_needed": false,
+                    "errors": [
+                        {
+                            "criterion": "arms_vertical_angle",
+                            "severity": "high",
+                            "measurement": "26.4\u00b0 from vertical",
+                            "improvement": "Raise your arms higher overhead",
+                            "frequency": 1.0
+                        },
+                        {
+                            "criterion": "back_leg_straight",
+                            "severity": "medium",
+                            "measurement": "Knee bent at 153.7\u00b0 (should be ~180\u00b0)",
+                            "improvement": "Straighten your back leg completely",
+                            "frequency": 1.0
+                        },
+                        {
+                            "criterion": "step_distance",
+                            "severity": "medium",
+                            "measurement": "0.41m step distance",
+                            "improvement": "Adjust your step size - take a bigger step for more momentum",
+                            "frequency": 0.6521739130434783
+                        }
+                    ]
+                },
+                {
+                    "name": "Swing",
+                    "score": 11,
+                    "max_score": 17,
+                    "description": "Analysis of Swing phase",
+                    "improvement_needed": false,
+                    "errors": [
+                        {
+                            "criterion": "back_leg_straight",
+                            "severity": "high",
+                            "measurement": "Knee bent at 108.5\u00b0",
+                            "improvement": "Keep your back leg straight throughout the swing",
+                            "frequency": 1.0
+                        }
+                    ]
+                },
+                {
+                    "name": "Handstand",
+                    "score": 8,
+                    "max_score": 17,
+                    "description": "Analysis of Handstand phase",
+                    "improvement_needed": false,
+                    "errors": [
+                        {
+                            "criterion": "back_straightness",
+                            "severity": "high",
+                            "measurement": "43.3\u00b0 deviation from straight",
+                            "improvement": "Engage your core to maintain a straight line from hands to feet",
+                            "frequency": 1.0
+                        },
+                        {
+                            "criterion": "hand_placement",
+                            "severity": "low",
+                            "measurement": "Hand width is 1.7x shoulder width",
+                            "improvement": "Place your hands shoulder-width apart",
+                            "frequency": 0.9696969696969697
+                        },
+                        {
+                            "criterion": "leg_alignment",
+                            "severity": "medium",
+                            "measurement": "0.17m deviation from vertical",
+                            "improvement": "Focus on stacking your ankles over your hips and shoulders",
+                            "frequency": 0.5151515151515151
+                        },
+                        {
+                            "criterion": "shoulder_position",
+                            "severity": "medium",
+                            "measurement": "0.11m deviation",
+                            "improvement": "Push through your shoulders to create a vertical line",
+                            "frequency": 0.18181818181818182
+                        }
+                    ]
+                },
+                {
+                    "name": "Back Position",
+                    "score": 8,
+                    "max_score": 17,
+                    "description": "Analysis of Back Position phase",
+                    "improvement_needed": false,
+                    "errors": []
+                },
+                {
+                    "name": "Arms Position",
+                    "score": 12,
+                    "max_score": 17,
+                    "description": "Analysis of Arms Position phase",
+                    "improvement_needed": false,
+                    "errors": []
+                }
+            ]
+        }
+    ]
+}
