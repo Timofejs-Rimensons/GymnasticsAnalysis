@@ -79,10 +79,12 @@ class ProcessingPipelineService:
                 if pose_name == 'phase':
                     continue
                 if 'sub_scores' in data and data['sub_scores']:
+                    all_poses[pose_name] = []
                     for sub_pose, sub_score in data['sub_scores'].items():
                         if sub_pose not in all_poses:
                             all_poses[sub_pose] = []
                         all_poses[sub_pose].append(sub_score)
+                        all_poses[pose_name].append(sub_score)
                 else:
                     if pose_name not in all_poses:
                         all_poses[pose_name] = []
