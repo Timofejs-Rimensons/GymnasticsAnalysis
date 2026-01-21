@@ -1,4 +1,4 @@
-const API_BASE_URL = "/api/backend";
+const API_BASE_URL = "/api";
 
 export interface UploadResponse {
   pid: string;
