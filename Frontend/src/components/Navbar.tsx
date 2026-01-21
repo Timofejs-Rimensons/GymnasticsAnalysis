@@ -53,25 +53,28 @@ export function Navbar() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-1">
-            {status === "authenticated" &&
-              navLinks.map((link) => {
-                const Icon = link.icon;
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className={cn(
-                      "flex items-center gap-2 px-4 py-2 font-bold uppercase text-sm tracking-wide transition-all duration-200 border-b-2",
-                      isActive(link.href)
-                        ? "border-accent text-accent"
-                        : "border-transparent hover:border-border hover:bg-surface"
-                    )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {link.label}
-                  </Link>
-                );
-              })}
+            {navLinks.map((link) => {
+              const Icon = link.icon;
+              // Show Upload to everyone, History and Profile only to authenticated users
+              if ((link.href === "/history" || link.href === "/profile") && status !== "authenticated") {
+                return null;
+              }
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 font-bold uppercase text-sm tracking-wide transition-all duration-200 border-b-2",
+                    isActive(link.href)
+                      ? "border-accent text-accent"
+                      : "border-transparent hover:border-border hover:bg-surface"
+                  )}
+                >
+                  <Icon className="w-4 h-4" />
+                  {link.label}
+                </Link>
+              );
+            })}
           </div>
 
           {/* Auth Buttons / User Menu */}
@@ -131,43 +134,47 @@ export function Navbar() {
             className="md:hidden border-t-2 border-border bg-background"
           >
             <div className="container mx-auto px-6 py-4 space-y-2">
+              {/* Show Upload to everyone */}
+              {navLinks.map((link) => {
+                const Icon = link.icon;
+                // Show Upload to everyone, History and Profile only to authenticated users
+                if ((link.href === "/history" || link.href === "/profile") && status !== "authenticated") {
+                  return null;
+                }
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 px-4 py-3 font-bold uppercase text-sm tracking-wide border-l-4 transition-all duration-200",
+                      isActive(link.href)
+                        ? "border-accent bg-accent/10 text-accent"
+                        : "border-transparent hover:border-border hover:bg-surface"
+                    )}
+                  >
+                    <Icon className="w-5 h-5" />
+                    {link.label}
+                  </Link>
+                );
+              })}
+              
               {status === "authenticated" ? (
-                <>
-                  {navLinks.map((link) => {
-                    const Icon = link.icon;
-                    return (
-                      <Link
-                        key={link.href}
-                        href={link.href}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={cn(
-                          "flex items-center gap-3 px-4 py-3 font-bold uppercase text-sm tracking-wide border-l-4 transition-all duration-200",
-                          isActive(link.href)
-                            ? "border-accent bg-accent/10 text-accent"
-                            : "border-transparent hover:border-border hover:bg-surface"
-                        )}
-                      >
-                        <Icon className="w-5 h-5" />
-                        {link.label}
-                      </Link>
-                    );
-                  })}
-                  <div className="pt-4 border-t-2 border-border">
-                    <p className="text-sm text-muted-foreground font-mono px-4 mb-2">
-                      {session.user?.email}
-                    </p>
-                    <button
-                      onClick={() => {
-                        setMobileMenuOpen(false);
-                        handleSignOut();
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-3 font-bold uppercase text-sm tracking-wide text-destructive hover:bg-destructive/10 transition-colors"
-                    >
-                      <LogOut className="w-5 h-5" />
-                      Logout
-                    </button>
-                  </div>
-                </>
+                <div className="pt-4 border-t-2 border-border">
+                  <p className="text-sm text-muted-foreground font-mono px-4 mb-2">
+                    {session.user?.email}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      handleSignOut();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 font-bold uppercase text-sm tracking-wide text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    Logout
+                  </button>
+                </div>
               ) : (
                 <Link
                   href="/login"

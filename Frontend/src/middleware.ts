@@ -12,10 +12,8 @@ export async function middleware(req: NextRequest) {
 
   const { pathname } = req.nextUrl;
 
-  // Protect routes
+  // Protect only history and profile routes - upload is public
   if (
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/upload") ||
     pathname.startsWith("/history") ||
     pathname.startsWith("/profile")
   ) {
@@ -31,8 +29,6 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/dashboard/:path*",
-    "/upload/:path*",
     "/history/:path*",
     "/profile/:path*",
   ],

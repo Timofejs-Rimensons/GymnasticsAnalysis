@@ -2,7 +2,7 @@
 
 import { Navbar } from "@/components/Navbar";
 import { useSession } from "next-auth/react";
-import { User, Mail, Calendar, Settings, Shield, LogOut, ChevronRight } from "lucide-react";
+import { User, Mail, Calendar, Settings, LogOut } from "lucide-react";
 import { ApiService } from "@/lib/api";
 import { useState, useEffect } from "react";
 
@@ -100,25 +100,6 @@ export default function ProfilePage() {
                     <div className="pt-4 flex justify-end">
                        <button className="btn-primary py-2 px-6 text-sm">Save Changes</button>
                     </div>
-                 </div>
-              </section>
-
-              {/* Security */}
-              <section>
-                 <h3 className="text-lg font-bold uppercase mb-4 flex items-center gap-2">
-                    <Shield className="w-5 h-5 text-accent" />
-                    Security
-                 </h3>
-                 
-                 <div className="card-brutalist space-y-4">
-                    <button className="w-full flex items-center justify-between p-4 border-2 border-border bg-background hover:border-accent transition-colors group">
-                       <span className="font-bold uppercase text-sm">Change Password</span>
-                       <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-accent" />
-                    </button>
-                    <button className="w-full flex items-center justify-between p-4 border-2 border-border bg-background hover:border-accent transition-colors group">
-                       <span className="font-bold uppercase text-sm">Two-Factor Authentication</span>
-                       <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-accent" />
-                    </button>
                  </div>
               </section>
            </div>
