@@ -441,3 +441,5 @@ FodyWeavers.xsd
 # Data files
 *.pdf
 *.csv
+
+test_output/

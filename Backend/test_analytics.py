@@ -106,31 +106,27 @@ def main():
                     if errors:
                         print(f"\n  Detected Issues ({len(errors)}):")
                         for idx, error in enumerate(errors, 1):
-                            severity_symbol = {
-                                'high': '🔴',
-                                'medium': '🟡',
-                                'low': '🟢'
-                            }.get(error.get('severity', 'medium'), '⚪')
+                            severity = error.get('severity', 'medium').upper()
                             
-                            print(f"    {idx}. {severity_symbol} {error.get('criterion', 'Unknown').replace('_', ' ').title()}")
+                            print(f"    {idx}. [{severity}] {error.get('criterion', 'Unknown').replace('_', ' ').title()}")
                             print(f"       Measurement: {error.get('measurement', 'N/A')}")
                             print(f"       Frequency: {error.get('frequency', 0)*100:.0f}% of frames")
-                            print(f"       💡 Tip: {error.get('improvement', 'No suggestion available')}")
+                            print(f"       Tip: {error.get('improvement', 'No suggestion available')}")
                     else:
-                        print("  ✅ No issues detected!")
+                        print("  No issues detected!")
             
             print(f"\n{'='*60}")
             print("OUTPUT FILES:")
             print(f"{'='*60}")
-            print(f"  📹 Annotated Video: {output_video_path}")
-            print(f"  📄 JSON Results:    {output_json_path}")
-            print(f"  📋 PDF Report:      {output_pdf_path}")
+            print(f"  Annotated Video: {output_video_path}")
+            print(f"  JSON Results:    {output_json_path}")
+            print(f"  PDF Report:      {output_pdf_path}")
             print(f"\n{'='*60}\n")
         else:
             print("Warning: Results JSON not found. Check for errors.")
         
     except Exception as e:
-        print(f"\n❌ Error during processing: {str(e)}")
+        print(f"\nError during processing: {str(e)}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

@@ -128,11 +128,17 @@ class PoseAnalyticsService:
             if left_arm_angle < threshold.get('min', 0) or left_arm_angle > threshold.get('max', 180):
                 deviation = min(abs(left_arm_angle - threshold['min']), 
                                abs(left_arm_angle - threshold['max']))
+                
+                if left_arm_angle < threshold.get('min', 0):
+                    improvement_msg = 'Raise your arms higher overhead'
+                else:
+                    improvement_msg = 'Bring your arms more upright and closer to vertical'
+                
                 feedback['errors'].append({
                     'criterion': 'arms_vertical_angle',
                     'severity': 'high' if deviation > 30 else 'medium' if deviation > 15 else 'low',
                     'measurement': f"{left_arm_angle:.1f}° from vertical",
-                    'improvement': threshold.get('tip', 'Raise your arms higher')
+                    'improvement': threshold.get('tip', improvement_msg)
                 })
                 feedback['score'] -= 0.3
         
@@ -150,7 +156,7 @@ class PoseAnalyticsService:
                     'criterion': 'back_leg_straight',
                     'severity': 'high' if deviation > 30 else 'medium' if deviation > 15 else 'low',
                     'measurement': f"Knee bent at {back_knee_angle:.1f}° (should be ~180°)",
-                    'improvement': threshold.get('tip', 'Straighten your back leg')
+                    'improvement': threshold.get('tip', 'Keep your back leg fully extended and straight')
                 })
                 feedback['score'] -= 0.35
         
@@ -163,11 +169,16 @@ class PoseAnalyticsService:
         if 'step_distance' in criteria:
             threshold = criteria['step_distance']
             if step_distance < threshold.get('min', 0) or step_distance > threshold.get('max', 10):
+                if step_distance < threshold.get('min', 0):
+                    improvement_msg = 'Take a bigger step forward to build momentum'
+                else:
+                    improvement_msg = 'Reduce your step size for better control'
+                
                 feedback['errors'].append({
                     'criterion': 'step_distance',
                     'severity': 'medium',
                     'measurement': f"{step_distance:.2f}m step distance",
-                    'improvement': threshold.get('tip', 'Adjust your step size')
+                    'improvement': threshold.get('tip', improvement_msg)
                 })
                 feedback['score'] -= 0.2
         
@@ -207,7 +218,7 @@ class PoseAnalyticsService:
                     'criterion': 'back_leg_straight',
                     'severity': 'high' if deviation > 30 else 'medium' if deviation > 15 else 'low',
                     'measurement': f"Knee bent at {back_knee_angle:.1f}°",
-                    'improvement': threshold.get('tip', 'Keep your back leg straight during swing')
+                    'improvement': threshold.get('tip', 'Maintain a fully extended back leg throughout the swing')
                 })
                 feedback['score'] -= 0.5
         
@@ -253,7 +264,7 @@ class PoseAnalyticsService:
                     'criterion': 'leg_alignment',
                     'severity': 'high' if leg_alignment_deviation > 0.3 else 'medium',
                     'measurement': f"{leg_alignment_deviation:.2f}m deviation from vertical",
-                    'improvement': threshold.get('tip', 'Align your legs vertically above your hands')
+                    'improvement': threshold.get('tip', 'Stack your hips and legs directly over your shoulders')
                 })
                 feedback['score'] -= 0.3
         
@@ -266,11 +277,17 @@ class PoseAnalyticsService:
         if 'back_straightness' in criteria:
             threshold = criteria['back_straightness']
             if back_straightness > threshold.get('max', 10):
+                # Determine if back is arched or piked
+                if back_angle < 180:
+                    improvement_msg = 'Avoid arching your back - tighten your core and glutes'
+                else:
+                    improvement_msg = 'Avoid piking at the hips - push your shoulders forward slightly'
+                
                 feedback['errors'].append({
                     'criterion': 'back_straightness',
                     'severity': 'medium' if back_straightness < 20 else 'high',
                     'measurement': f"{back_straightness:.1f}° deviation from straight",
-                    'improvement': threshold.get('tip', 'Straighten your back - engage your core')
+                    'improvement': threshold.get('tip', improvement_msg)
                 })
                 feedback['score'] -= 0.25
         
@@ -288,11 +305,16 @@ class PoseAnalyticsService:
         if 'hand_width_ratio' in criteria:
             threshold = criteria['hand_width_ratio']
             if hand_width_ratio < threshold.get('min', 0.9) or hand_width_ratio > threshold.get('max', 1.3):
+                if hand_width_ratio < threshold.get('min', 0.9):
+                    improvement_msg = 'Place your hands wider apart to match shoulder width'
+                else:
+                    improvement_msg = 'Bring your hands closer together to match shoulder width'
+                
                 feedback['errors'].append({
                     'criterion': 'hand_placement',
                     'severity': 'low',
                     'measurement': f"Hand width is {hand_width_ratio:.1f}x shoulder width",
-                    'improvement': threshold.get('tip', 'Adjust hand placement to match shoulder width')
+                    'improvement': threshold.get('tip', improvement_msg)
                 })
                 feedback['score'] -= 0.15
         
@@ -309,7 +331,7 @@ class PoseAnalyticsService:
                     'criterion': 'shoulder_position',
                     'severity': 'medium',
                     'measurement': f"{shoulder_arm_alignment:.2f}m deviation",
-                    'improvement': threshold.get('tip', 'Stack your shoulders directly over your wrists')
+                    'improvement': threshold.get('tip', 'Push your shoulders forward to align directly over your wrists')
                 })
                 feedback['score'] -= 0.2
         
@@ -346,11 +368,16 @@ class PoseAnalyticsService:
         if 'knee_flexion' in criteria:
             threshold = criteria['knee_flexion']
             if avg_knee_angle < threshold.get('min', 90) or avg_knee_angle > threshold.get('max', 140):
+                if avg_knee_angle < threshold.get('min', 90):
+                    improvement_msg = 'Bend your knees more to properly absorb the landing impact'
+                else:
+                    improvement_msg = 'Land with less knee bend for a more controlled finish'
+                
                 feedback['errors'].append({
                     'criterion': 'knee_flexion',
                     'severity': 'medium',
                     'measurement': f"Knee angle at {avg_knee_angle:.1f}°",
-                    'improvement': threshold.get('tip', 'Bend your knees to absorb the landing impact')
+                    'improvement': threshold.get('tip', improvement_msg)
                 })
                 feedback['score'] -= 0.3
         
