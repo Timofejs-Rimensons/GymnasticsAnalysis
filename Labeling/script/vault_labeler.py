@@ -13,10 +13,11 @@ Features:
 Controls:
 - SPACE: Play/Pause
 - LEFT/RIGHT ARROW: Previous/Next frame
-- 1: Mark Take-off from springboard
-- 2: Mark Flight phase 1 & hand placement  
-- 3: Mark Flight phase 2
-- 4: Mark Landing & finish
+- 1: Mark Run-up
+- 2: Mark Take-off from springboard
+- 3: Mark Flight phase 1 & hand placement  
+- 4: Mark Flight phase 2
+- 5: Mark Landing & finish
 - S: Save current labels
 - Q: Quit (with save prompt)
 - R: Reset all labels
@@ -55,14 +56,16 @@ class VaultLabeler:
         self.mp_drawing_styles = mp.solutions.drawing_styles
         
         # Phase definitions for vault exercise
-        self.PHASE_NAMES = ['takeoff', 'flight1_handplacement', 'flight2', 'landing']
+        self.PHASE_NAMES = ['runup', 'takeoff', 'flight1_handplacement', 'flight2', 'landing']
         self.PHASE_DISPLAY_NAMES = {
+            'runup': 'Run-up',
             'takeoff': 'Take-off from springboard',
             'flight1_handplacement': 'Flight phase 1 & hand placement',
             'flight2': 'Flight phase 2',
             'landing': 'Landing & finish'
         }
         self.PHASE_COLORS = {
+            'runup': (0, 128, 255),                    # Blue
             'takeoff': (0, 255, 0),                    # Green
             'flight1_handplacement': (255, 165, 0),    # Orange  
             'flight2': (255, 0, 255),                  # Magenta
@@ -76,6 +79,7 @@ class VaultLabeler:
         
         # Labels storage
         self.manual_labels = {
+            'runup': -1,
             'takeoff': -1,
             'flight1_handplacement': -1,
             'flight2': -1,
@@ -169,6 +173,7 @@ class VaultLabeler:
         
         # Reset labels for new video
         self.manual_labels = {
+            'runup': -1,
             'takeoff': -1,
             'flight1_handplacement': -1,
             'flight2': -1,
@@ -243,6 +248,7 @@ class VaultLabeler:
             
             # Shortened display names for legend
             short_names = {
+                'runup': 'Run-up',
                 'takeoff': 'Take-off',
                 'flight1_handplacement': 'Flight 1 & hand',
                 'flight2': 'Flight 2',
@@ -250,12 +256,12 @@ class VaultLabeler:
             }
             short_name = short_names.get(phase_name, display_name)
             
-            if i < 2:
+            if i < 3:
                 y_pos = legend_y_row1
-                x_pos = legend_x + (i * 150)
+                x_pos = legend_x + (i * 120)
             else:
                 y_pos = legend_y_row2
-                x_pos = legend_x + ((i - 2) * 150)
+                x_pos = legend_x + ((i - 3) * 120)
             
             cv2.circle(frame, (x_pos, y_pos), 5, color, -1)
             cv2.putText(frame, f"{i+1}:{short_name}", (x_pos + 12, y_pos + 4),
@@ -286,7 +292,7 @@ class VaultLabeler:
         
         # Controls help
         help_text = [
-            "SPACE: Play/Pause | ARROWS: Step | 1-4: Mark phases",
+            "SPACE: Play/Pause | ARROWS: Step | 1-5: Mark phases",
             "S: Save | N: Next video | R: Reset | Q: Quit"
         ]
         help_y = height - 110
@@ -332,6 +338,7 @@ class VaultLabeler:
     def reset_labels(self):
         """Reset all manual labels"""
         self.manual_labels = {
+            'runup': -1,
             'takeoff': -1,
             'flight1_handplacement': -1,
             'flight2': -1,
@@ -343,6 +350,7 @@ class VaultLabeler:
         """Save labels to CSV"""
         data = {
             'videoname': self.video_name,
+            'runup': self.manual_labels['runup'],
             'takeoff': self.manual_labels['takeoff'],
             'flight1_handplacement': self.manual_labels['flight1_handplacement'],
             'flight2': self.manual_labels['flight2'],
@@ -356,7 +364,6 @@ class VaultLabeler:
         df.to_csv(output_path, mode='a', header=not file_exists, index=False)
         
         print(f"\n✓ Labels saved to {output_path}")
-        print(f"  {data}")
     
     def run(self, video_path: str, output_csv: str = None, batch_mode: bool = False):
         """
@@ -385,10 +392,11 @@ class VaultLabeler:
         print("\nControls:")
         print("  SPACE:       Play/Pause")
         print("  ←/→:         Previous/Next frame")
-        print("  1:           Mark Take-off from springboard")
-        print("  2:           Mark Flight phase 1 & hand placement")
-        print("  3:           Mark Flight phase 2")
-        print("  4:           Mark Landing & finish")
+        print("  1:           Mark Run-up")
+        print("  2:           Mark Take-off from springboard")
+        print("  3:           Mark Flight phase 1 & hand placement")
+        print("  4:           Mark Flight phase 2")
+        print("  5:           Mark Landing & finish")
         print("  S:           Save labels to CSV")
         if batch_mode:
             print("  N:           Save and go to Next video")
@@ -421,17 +429,20 @@ class VaultLabeler:
                 self.current_frame_idx = min(self.total_frames - 1, self.current_frame_idx + 1)
                 self.playing = False
                 
-            elif key == ord('1'):  # Mark take-off
+            elif key == ord('1'):  # Mark run-up
                 self.mark_phase(0)
                 
-            elif key == ord('2'):  # Mark flight 1 & hand placement
+            elif key == ord('2'):  # Mark take-off
                 self.mark_phase(1)
                 
-            elif key == ord('3'):  # Mark flight 2
+            elif key == ord('3'):  # Mark flight 1 & hand placement
                 self.mark_phase(2)
                 
-            elif key == ord('4'):  # Mark landing
+            elif key == ord('4'):  # Mark flight 2
                 self.mark_phase(3)
+                
+            elif key == ord('5'):  # Mark landing
+                self.mark_phase(4)
                 
             elif key == ord('s') or key == ord('S'):  # Save
                 self.save_labels(output_csv)
@@ -442,9 +453,7 @@ class VaultLabeler:
             elif key == ord('n') or key == ord('N'):  # Next video (batch mode)
                 if batch_mode:
                     if not saved_this_session:
-                        print("\n⚠️  Saving labels before moving to next video...")
                         self.save_labels(output_csv)
-                    print("\n→ Moving to next video...")
                     cv2.destroyAllWindows()
                     return 'next'
                 else:
@@ -454,14 +463,9 @@ class VaultLabeler:
                 self.reset_labels()
                 
             elif key == ord('q') or key == ord('Q') or key == 27:  # Quit
-                if batch_mode:
-                    response = input("\nSave current video before quitting? (y/n): ").strip().lower()
-                    if response == 'y':
-                        self.save_labels(output_csv)
-                else:
-                    response = input("\nSave labels before quitting? (y/n): ").strip().lower()
-                    if response == 'y':
-                        self.save_labels(output_csv)
+                response = input("\nSave labels before quitting? (y/n): ").strip().lower()
+                if response == 'y':
+                    self.save_labels(output_csv)
                 cv2.destroyAllWindows()
                 return 'quit'
             
@@ -543,10 +547,11 @@ def main():
     print("VAULT EXERCISE LABELING TOOL")
     print("="*60)
     print("\nPhases to label:")
-    print("  1. Take-off from the springboard")
-    print("  2. Flight phase 1 & hand placement")
-    print("  3. Flight phase 2")
-    print("  4. Landing & finish")
+    print("  1. Run-up")
+    print("  2. Take-off from the springboard")
+    print("  3. Flight phase 1 & hand placement")
+    print("  4. Flight phase 2")
+    print("  5. Landing & finish")
     print("\n" + "="*60)
     print("\nOptions:")
     print("1. Label single video")
