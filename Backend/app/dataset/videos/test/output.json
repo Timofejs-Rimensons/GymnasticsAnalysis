@@ -1,43 +1,50 @@
 {
     "overall_score": 56,
     "max_score": 100.0,
-    "percentage": 55.79077089689167,
+    "percentage": 56.09447877325938,
     "categories": [
         {
             "name": "Poses",
             "poses": [
                 {
                     "name": "Starting",
-                    "score": 6,
-                    "max_score": 20,
+                    "score": 5,
+                    "max_score": 17,
                     "description": "Placeholder description.",
                     "improvement_needed": false
                 },
                 {
                     "name": "Swing",
-                    "score": 14,
-                    "max_score": 20,
+                    "score": 11,
+                    "max_score": 17,
+                    "description": "Placeholder description.",
+                    "improvement_needed": false
+                },
+                {
+                    "name": "Handstand",
+                    "score": 10,
+                    "max_score": 17,
                     "description": "Placeholder description.",
                     "improvement_needed": false
                 },
                 {
                     "name": "Back Position",
-                    "score": 12,
-                    "max_score": 20,
+                    "score": 10,
+                    "max_score": 17,
                     "description": "Placeholder description.",
                     "improvement_needed": false
                 },
                 {
                     "name": "Arms Position",
-                    "score": 14,
-                    "max_score": 20,
+                    "score": 12,
+                    "max_score": 17,
                     "description": "Placeholder description.",
                     "improvement_needed": false
                 },
                 {
                     "name": "Landing",
-                    "score": 10,
-                    "max_score": 20,
+                    "score": 8,
+                    "max_score": 17,
                     "description": "Placeholder description.",
                     "improvement_needed": false
                 }

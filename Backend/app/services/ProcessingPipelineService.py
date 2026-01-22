@@ -54,6 +54,17 @@ class ProcessingPipelineService:
             scorer.load_model(model_path)
             self.scoring_models[model_path] = scorer
 
+    def _get_joint_indices_from_segment_mask(self, segment_mask):
+        """Converts a segment mask to a list of joint indices."""
+        segment_to_joints = {
+            0: [1, 3], 1: [3, 5], 2: [2, 4], 3: [4, 6], 4: [7, 9],
+            5: [9, 11], 6: [8, 10], 7: [10, 12], 8: [1, 2], 9: [7, 8]
+        }
+        joint_indices = set()
+        for seg_idx in segment_mask:
+            joint_indices.update(segment_to_joints.get(seg_idx, []))
+        return sorted(list(joint_indices))
+
     def _update_status(self, status_json_path: str, status: str, progress: float):
         try:
             with open(status_json_path, 'r+') as f:
@@ -79,10 +90,12 @@ class ProcessingPipelineService:
                 if pose_name == 'phase':
                     continue
                 if 'sub_scores' in data and data['sub_scores']:
+                    all_poses[pose_name] = []
                     for sub_pose, sub_score in data['sub_scores'].items():
                         if sub_pose not in all_poses:
                             all_poses[sub_pose] = []
                         all_poses[sub_pose].append(sub_score)
+                        all_poses[pose_name].append(sub_score)
                 else:
                     if pose_name not in all_poses:
                         all_poses[pose_name] = []
@@ -134,27 +147,30 @@ class ProcessingPipelineService:
             json.dump(results, json_file, indent=4)
 
     def process_video(self, video_path, exercise_config):
-        frames_data, feature_tensor, mask = self.segmentation_repository.process_video_cosine_segments(video_path)
-        
-        if feature_tensor.shape[0] == 0:
+        frames_data, feature_tensor, mask = self.segmentation_repository.process_video_stgcn(video_path)
+
+        if feature_tensor.size == 0:
             return [], None, None, None
+
+        # feature_tensor is (1, T, V, C), we want (T, V*C)
+        squeezed_tensor = np.squeeze(feature_tensor, axis=0)
         
-        skeletons_masked = feature_tensor[mask]
-        feature_0 = skeletons_masked[:, :, 0]
-        feature_1 = skeletons_masked[:, :, 1]
-        skeletons = np.hstack((feature_0, feature_1))
+        # Filter frames where a pose was detected
+        skeletons_masked = squeezed_tensor[mask]
+        
+        # Reshape for the GRU model: (T, V, C) -> (T, V*C)
+        num_frames, num_joints, num_coords = skeletons_masked.shape
+        skeletons = skeletons_masked.reshape((num_frames, num_joints * num_coords))
 
         predictions, _ = self.classifier.predict_frames([skeletons], return_probabilities=True)
         frame_poses = predictions[0]
         
         pose_scores_per_frame = []
-        segment_scores_per_frame = []  # NEW: Store segment scores separately
+        segment_scores_per_frame = []
 
         class_names = list(exercise_config['poses'].keys())
-        num_segments = feature_0.shape[1]  # Number of body segments
         
         original_frame_pose_names = ['no_pose'] * len(mask)
-        original_frame_segment_scores = [None] * len(mask)  # NEW: Track segment scores for all frames
         
         mask_indices = np.where(mask)[0]
         for i, predicted_pose_idx in enumerate(frame_poses):
@@ -170,9 +186,8 @@ class ProcessingPipelineService:
 
             pose_info = exercise_config['poses'][pose_name]
             frame_scores = {'phase': pose_name}
-            current_segment_scores = {}  # NEW: Collect segment scores for this frame
+            current_segment_scores = {}
             
-            # Find the index in the masked skeleton array
             skeleton_in_valid_poses_idx = np.where(mask_indices == i)[0]
             
             if skeleton_in_valid_poses_idx.size == 0:
@@ -185,10 +200,8 @@ class ProcessingPipelineService:
             if 'model_rel_path' in pose_info and pose_info['model_rel_path']:
                 scorer = self.scoring_models.get(pose_info['model_rel_path'])
                 if scorer:
-                    # Get per-segment scores from the model
                     scores_output = scorer.predict_frames([[current_skeleton]])[0][0]
                     
-                    # If scores_output is multi-dimensional (per-segment), store them
                     if hasattr(scores_output, '__len__') and len(scores_output) > 1:
                         score = float(np.mean(scores_output))
                         current_segment_scores = {k: float(v) for k, v in enumerate(scores_output)}
@@ -209,20 +222,20 @@ class ProcessingPipelineService:
                         segment_mask = sub_pose_info.get('segment_mask')
                         
                         if segment_mask:
-                            # Apply segment mask to get sub-pose features
-                            mask_indices_for_features = np.array(segment_mask + [s + num_segments for s in segment_mask])
-                            sub_pose_features = current_skeleton[mask_indices_for_features]
+                            joint_indices = self._get_joint_indices_from_segment_mask(segment_mask)
+                            feature_indices = []
+                            for joint_idx in joint_indices:
+                                feature_indices.extend(range(joint_idx * 3, joint_idx * 3 + 3))
+                            sub_pose_features = current_skeleton[feature_indices]
                         else:
                             sub_pose_features = current_skeleton
                         
-                        # Get per-segment scores from the sub-pose model
                         sub_scores_output = scorer.predict_frames([[sub_pose_features]])[0][0]
                         
                         if hasattr(sub_scores_output, '__len__') and len(sub_scores_output) > 1:
                             sub_score = float(np.mean(sub_scores_output))
-                            # Map back segment scores to original segment indices
                             if segment_mask:
-                                for idx, seg_idx in enumerate(segment_mask):
+                                for idx, seg_idx in enumerate(joint_indices):
                                     sub_pose_segment_scores[seg_idx] = float(sub_scores_output[idx])
                             else:
                                 sub_pose_segment_scores.update({k: float(v) for k, v in enumerate(sub_scores_output)})
@@ -231,16 +244,14 @@ class ProcessingPipelineService:
                         
                         frame_scores[pose_name]['sub_scores'][sub_pose_name] = sub_score
                 
-                # Merge sub-pose segment scores into current_segment_scores
                 current_segment_scores.update(sub_pose_segment_scores)
                 
-                # Calculate parent score as mean of sub-pose scores
                 if frame_scores[pose_name]['sub_scores']:
                     frame_scores[pose_name]['score'] = np.mean(list(frame_scores[pose_name]['sub_scores'].values()))
 
             pose_scores_per_frame.append(frame_scores)
             segment_scores_per_frame.append(current_segment_scores if current_segment_scores else None)
-            
+
         return pose_scores_per_frame, frames_data, segment_scores_per_frame, mask
 
     def analyze_video(self, input_video_path: str, output_video_path: str, output_pdf_path: str, output_json_path: str, exercise_name: str, status_json_path: str):

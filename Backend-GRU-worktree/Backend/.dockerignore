@@ -1,0 +1,5 @@
+*.mov
+*.mp4
+*.ipynb
+__init__.py
+__pycache__

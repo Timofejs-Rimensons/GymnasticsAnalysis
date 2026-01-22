@@ -1,641 +1,476 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
-from torch.nn.utils.rnn import pad_sequence
 import numpy as np
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-import matplotlib.pyplot as plt
-from tqdm import tqdm
+import time
 
-from models.PoseGRUModel import PoseGRUModel
 
 class ClassifyingService:
     """
-    Per-frame classifier using sliding windows with PoseGRUModel.
-    Each frame gets a prediction based on its surrounding context window.
+    Skeleton-based action classifier using STGCN backbone.
+    
+    Expected input format per sequence: (M, T, V, C)
+        - M: number of persons (typically 1)
+        - T: number of frames
+        - V: number of joints (17 for COCO)
+        - C: channels (3 for x, y, confidence)
+    
+    Model (RecognizerGCN) expects: (N, M, T, V, C)
+        - N: batch size
     """
     
-    def __init__(
-        self,
-        num_classes=None,
-        input_size=None,
-        window_size=30,
-        stride=1,
-        hidden_size=128,
-        num_layers=2,
-        dropout=0.3,
-        learning_rate=1e-3,
-        batch_size=32,
-        epochs=100,
-        patience=10,
-        device=None,
-        class_names=None,
-        verbose=True,
-        augment=True,
-        augment_scale_range=(0.99, 1.01),
-        model_path=None,
-        use_joint_attention=True,
-        use_temporal_attention=True,
-        padding_mode='edge'
-    ):
+    def __init__(self, model_cfg=None, num_classes=None, window_size=30, device='cpu', verbose=True, **kwargs):
+        self.model_cfg = model_cfg
         self.num_classes = num_classes
-        self.input_size = input_size
         self.window_size = window_size
-        self.stride = stride
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.dropout = dropout
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.patience = patience
+        self.device = torch.device(device)
         self.verbose = verbose
-        if num_classes:
-            self.class_names = class_names or [f'Class_{i}' for i in range(num_classes)]
-        else:
-            self.class_names = class_names
-        self.augment = augment
-        self.augment_scale_range = augment_scale_range
-        self.use_joint_attention = use_joint_attention
-        self.use_temporal_attention = use_temporal_attention
-        self.padding_mode = padding_mode
+        self.history = {'loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
+        self.model = None
         
-        self.device = torch.device(
-            device if device else ('cuda:0' if torch.cuda.is_available() else 'cpu')
-        )
-        
-        if model_path:
-            # FIX: Add map_location to handle CPU/GPU compatibility
-            self.model = torch.load(model_path, weights_only=False, map_location=self.device)
-            self.model.to(self.device)  # Ensure model is on the correct device
-            self.model.eval()
-        else:
-            self.model = None
-        
-        self.history = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
+        if self.model_cfg is not None and self.num_classes is not None:
+            self._init_model()
 
-    def set_model(self, model):
-        """Sets the model for the service."""
-        self.model = model.to(self.device)
+    def _log(self, message):
+        """Print message if verbose mode is enabled."""
+        if self.verbose:
+            print(message)
 
-    def set_hyperparameters(self, **kwargs):
-        """Sets hyperparameters for the service."""
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-    
-    def _build_model(self, input_size):
-        self.input_size = input_size
-        if self.num_classes is None:
-            raise ValueError("num_classes must be set before building the model.")
-        self.model = PoseGRUModel(
-            num_joint_features=input_size,
-            hidden_size=self.hidden_size,
-            num_layers=self.num_layers,
-            num_classes=self.num_classes,
-            dropout=self.dropout,
-            use_joint_attention=self.use_joint_attention,
-            use_temporal_attention=self.use_temporal_attention
-        ).to(self.device)
-    
-    def _create_windows(self, features, targets=None):
-        """
-        Create sliding windows from a sequence.
+    def _init_model(self):
+        """Initialize the STGCN model."""
+        from pyskl.models import build_model
         
-        Args:
-            features: (num_frames, num_features)
-            targets: (num_frames, num_classes) or (num_frames,) or None
+        self._log("=" * 60)
+        self._log("Initializing Model...")
+        self._log(f"  - Device: {self.device}")
+        self._log(f"  - Num Classes: {self.num_classes}")
+        self._log(f"  - Window Size: {self.window_size}")
         
-        Returns:
-            windows: List of (window_size, num_features) arrays
-            window_targets: List of target labels (for center frame or majority vote)
-            frame_indices: List of frame indices that each window represents
-        """
-        num_frames = len(features)
+        self.model = build_model(self.model_cfg).to(self.device)
         
-        # Pad the sequence if necessary
-        if num_frames < self.window_size:
-            pad_amount = self.window_size - num_frames
-            if self.padding_mode == 'edge':
-                # Repeat edge values
-                features = np.pad(features, ((0, pad_amount), (0, 0)), mode='edge')
-                if targets is not None:
-                    if targets.ndim == 2:
-                        targets = np.pad(targets, ((0, pad_amount), (0, 0)), mode='edge')
-                    else:
-                        targets = np.pad(targets, (0, pad_amount), mode='edge')
-            elif self.padding_mode == 'reflect':
-                features = np.pad(features, ((0, pad_amount), (0, 0)), mode='reflect')
-                if targets is not None:
-                    if targets.ndim == 2:
-                        targets = np.pad(targets, ((0, pad_amount), (0, 0)), mode='reflect')
-                    else:
-                        targets = np.pad(targets, (0, pad_amount), mode='reflect')
-            else:  # zero padding
-                features = np.pad(features, ((0, pad_amount), (0, 0)), mode='constant')
-                if targets is not None:
-                    if targets.ndim == 2:
-                        # For one-hot, pad with zeros
-                        targets = np.pad(targets, ((0, pad_amount), (0, 0)), mode='constant')
-                    else:
-                        # For class indices, pad with the most common class or 0
-                        targets = np.pad(targets, (0, pad_amount), mode='constant')
-            num_frames = len(features)
+        if hasattr(self.model, 'backbone'):
+            backbone = self.model.backbone
+            if hasattr(backbone, 'data_bn'):
+                bn_features = backbone.data_bn.num_features
+                self._log(f"  - Backbone data_bn: BatchNorm1d({bn_features})")
         
-        windows = []
-        window_targets = []
-        frame_indices = []
+        if hasattr(self.model, 'cls_head') and hasattr(self.model.cls_head, 'fc_cls'):
+            head = self.model.cls_head.fc_cls
+            in_dims = head.in_features
+            self.model.cls_head.fc_cls = nn.Linear(in_dims, self.num_classes).to(self.device)
+            self._log(f"  - Classification head: Linear({in_dims}, {self.num_classes})")
         
-        # Add padding for centered windows
-        half_window = self.window_size // 2
+        total_params = sum(p.numel() for p in self.model.parameters())
+        self._log(f"  - Total parameters: {total_params:,}")
         
-        if self.padding_mode == 'edge':
-            padded_features = np.pad(features, ((half_window, half_window), (0, 0)), mode='edge')
-            if targets is not None:
-                if targets.ndim == 2:
-                    padded_targets = np.pad(targets, ((half_window, half_window), (0, 0)), mode='edge')
-                else:
-                    padded_targets = np.pad(targets, (half_window, half_window), mode='edge')
-        elif self.padding_mode == 'reflect':
-            padded_features = np.pad(features, ((half_window, half_window), (0, 0)), mode='reflect')
-            if targets is not None:
-                if targets.ndim == 2:
-                    padded_targets = np.pad(targets, ((half_window, half_window), (0, 0)), mode='reflect')
-                else:
-                    padded_targets = np.pad(targets, (half_window, half_window), mode='reflect')
-        else:
-            padded_features = np.pad(features, ((half_window, half_window), (0, 0)), mode='constant')
-            if targets is not None:
-                if targets.ndim == 2:
-                    padded_targets = np.pad(targets, ((half_window, half_window), (0, 0)), mode='constant')
-                else:
-                    padded_targets = np.pad(targets, (half_window, half_window), mode='constant')
+        self._log("Model initialized successfully!")
+        self._log("=" * 60)
+
+    def _validate_sequence_shape(self, seq, seq_idx=0):
+        """Validate and fix sequence shape to (M, T, V, C)."""
+        seq = np.array(seq, dtype=np.float32)
+        original_shape = seq.shape
         
-        # Create windows
-        for i in range(0, num_frames, self.stride):
-            # Window centered at frame i
-            start = i
-            end = start + self.window_size
-            
-            window = padded_features[start:end]
-            windows.append(window)
-            
-            # Target is the center frame's label
-            if targets is not None:
-                center_idx = start + half_window
-                if padded_targets.ndim == 2:
-                    # One-hot encoded
-                    target = np.argmax(padded_targets[center_idx])
-                else:
-                    target = int(padded_targets[center_idx])
-                window_targets.append(target)
-            
-            frame_indices.append(i)
+        if seq.ndim == 3:
+            seq = seq[np.newaxis, ...]
+            if seq_idx == 0:
+                self._log(f"  [Shape Fix] {original_shape} -> {seq.shape} (added M dimension)")
         
-        return windows, window_targets if targets is not None else None, frame_indices
-    
-    def _prepare_batch_windows(self, sequences, targets=None):
-        """
-        Create windows from multiple sequences and prepare them as a batch.
-        """
+        if seq.ndim != 4:
+            raise ValueError(f"Sequence {seq_idx}: Expected 3D or 4D array, got shape {original_shape}")
+        
+        M, T, V, C = seq.shape
+        
+        if V != 17:
+            if C == 17:
+                seq = seq.transpose(0, 1, 3, 2)
+                M, T, V, C = seq.shape
+                if seq_idx == 0:
+                    self._log(f"  [Shape Fix] Transposed last two axes: {original_shape} -> {seq.shape}")
+            elif M == 17:
+                raise ValueError(
+                    f"Sequence {seq_idx}: Unusual shape {original_shape}. "
+                    f"Expected (M, T, V, C) where V=17 joints, C=3 coords."
+                )
+        
+        if C != 3:
+            if seq.shape[1] == 3:
+                seq = seq.transpose(0, 2, 3, 1)
+                M, T, V, C = seq.shape
+                if seq_idx == 0:
+                    self._log(f"  [Shape Fix] Detected (M,C,T,V), transposed: {original_shape} -> {seq.shape}")
+        
+        M, T, V, C = seq.shape
+        if V != 17 or C != 3:
+            raise ValueError(
+                f"Sequence {seq_idx}: Shape validation failed. "
+                f"Expected (M, T, 17, 3), got (M={M}, T={T}, V={V}, C={C})"
+            )
+        
+        return seq
+
+    def _prepare_training_data(self, x, y, padding='edge'):
+        """Prepare training windows from sequences."""
         all_windows = []
-        all_targets = []
-        all_seq_ids = []
-        all_frame_ids = []
+        all_labels = []
+        pad_size = self.window_size // 2
         
-        for seq_id, (seq_features, seq_targets) in enumerate(
-            zip(sequences, targets) if targets is not None else zip(sequences, [None] * len(sequences))
-        ):
-            windows, window_targets, frame_indices = self._create_windows(seq_features, seq_targets)
-            all_windows.extend(windows)
-            if window_targets is not None:
-                all_targets.extend(window_targets)
-            all_seq_ids.extend([seq_id] * len(windows))
-            all_frame_ids.extend(frame_indices)
+        self._log("\n" + "=" * 60)
+        self._log("Preparing Training Data...")
+        self._log(f"  - Number of sequences: {len(x)}")
+        self._log(f"  - Window size: {self.window_size}")
+        self._log(f"  - Padding: {padding} (pad_size={pad_size})")
         
-        return all_windows, all_targets if all_targets else None, all_seq_ids, all_frame_ids
-    
-    def _augment_windows(self, windows):
-        """Apply augmentation to windows."""
-        if not self.augment:
-            return windows
-            
-        augmented = []
-        low, high = self.augment_scale_range
+        skipped = 0
         
-        for window in windows:
-            scale = np.random.uniform(low, high, size=window.shape).astype(window.dtype)
-            augmented.append(window * scale)
-        
-        return augmented
-    
-    def fit(self, x_train, y_train, x_val=None, y_val=None):
-        """
-        Train on sequences with per-frame labels using sliding windows.
-        
-        Args:
-            x_train: List of sequences, each of shape (num_frames, num_features)
-            y_train: List of frame-level labels, each of shape (num_frames, num_classes) or (num_frames,)
-            x_val: Optional validation sequences
-            y_val: Optional validation labels
-        """
-        
-        # Build model
-        input_size = x_train[0].shape[1]
-        self._build_model(input_size)
-        
-        # Create all windows from training data
-        if self.verbose:
-            print(f"Creating windows with size {self.window_size} and stride {self.stride}...")
-        
-        train_windows, train_targets, train_seq_ids, train_frame_ids = self._prepare_batch_windows(x_train, y_train)
-        n_windows = len(train_windows)
-        
-        if self.verbose:
-            print(f"Created {n_windows} training windows from {len(x_train)} sequences")
-        
-        # Prepare validation windows if provided
-        val_windows = None
-        val_targets = None
-        if x_val is not None:
-            val_windows, val_targets, _, _ = self._prepare_batch_windows(x_val, y_val)
-            if self.verbose:
-                print(f"Created {len(val_windows)} validation windows from {len(x_val)} sequences")
-        
-        criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', patience=5, factor=0.5
-        )
-        
-        best_val_loss = float('inf')
-        best_model_state = None
-        patience_counter = 0
-        
-        epoch_iterator = range(self.epochs)
-        if self.verbose:
-            epoch_iterator = tqdm(epoch_iterator, desc='Training')
-        
-        for epoch in epoch_iterator:
-            self.model.train()
-            
-            # Shuffle windows
-            indices = np.random.permutation(n_windows)
-            train_loss = 0
-            train_correct = 0
-            train_total = 0
-            
-            # Process in batches
-            for batch_start in range(0, n_windows, self.batch_size):
-                batch_end = min(batch_start + self.batch_size, n_windows)
-                batch_indices = indices[batch_start:batch_end]
-                
-                # Get batch windows and targets
-                batch_windows = [train_windows[i] for i in batch_indices]
-                batch_targets = [train_targets[i] for i in batch_indices]
-                
-                # Augment if enabled
-                if self.augment:
-                    batch_windows = self._augment_windows(batch_windows)
-                
-                # Convert to tensors
-                batch_x = torch.FloatTensor(np.array(batch_windows)).to(self.device)
-                batch_y = torch.LongTensor(batch_targets).to(self.device)
-                
-                optimizer.zero_grad()
-                
-                # Forward pass - each window gets one prediction
-                logits, _, _ = self.model(batch_x)
-                
-                # Compute loss
-                loss = criterion(logits, batch_y)
-                loss.backward()
-                
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                optimizer.step()
-                
-                # Calculate accuracy
-                preds = logits.argmax(dim=-1)
-                train_correct += (preds == batch_y).sum().item()
-                train_total += len(batch_y)
-                train_loss += loss.item() * len(batch_y)
-            
-            train_loss /= train_total
-            train_acc = train_correct / train_total
-            
-            self.history['train_loss'].append(train_loss)
-            self.history['train_acc'].append(train_acc)
-            
-            # Validation
-            val_loss, val_acc = 0, 0
-            if val_windows is not None:
-                val_loss, val_acc = self._evaluate_windows(val_windows, val_targets, criterion)
-                self.history['val_loss'].append(val_loss)
-                self.history['val_acc'].append(val_acc)
-                
-                scheduler.step(val_loss)
-                
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    best_model_state = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
-                    patience_counter = 0
-                else:
-                    patience_counter += 1
-                
-                if patience_counter >= self.patience:
-                    if self.verbose:
-                        print(f'\nEarly stopping at epoch {epoch + 1}')
-                    break
-            
-            if self.verbose:
-                desc = f'Loss: {train_loss:.4f}, Acc: {train_acc:.4f}'
-                if val_windows is not None:
-                    desc += f' | Val: {val_loss:.4f}, {val_acc:.4f}'
-                epoch_iterator.set_postfix_str(desc)
-        
-        # Load best model
-        if best_model_state:
-            self.model.load_state_dict(best_model_state)
-        
-        return self
-    
-    @torch.no_grad()
-    def _evaluate_windows(self, windows, targets, criterion):
-        """Evaluate on a set of windows."""
-        self.model.eval()
-        
-        total_loss = 0
-        total_correct = 0
-        total_samples = 0
-        
-        for batch_start in range(0, len(windows), self.batch_size):
-            batch_end = min(batch_start + self.batch_size, len(windows))
-            
-            batch_windows = windows[batch_start:batch_end]
-            batch_targets = targets[batch_start:batch_end]
-            
-            batch_x = torch.FloatTensor(np.array(batch_windows)).to(self.device)
-            batch_y = torch.LongTensor(batch_targets).to(self.device)
-            
-            logits, _, _ = self.model(batch_x)
-            
-            loss = criterion(logits, batch_y)
-            total_loss += loss.item() * len(batch_y)
-            
-            preds = logits.argmax(dim=-1)
-            total_correct += (preds == batch_y).sum().item()
-            total_samples += len(batch_y)
-        
-        return total_loss / total_samples, total_correct / total_samples
-
-    def _filter_short_poses(self, predictions, min_duration):
-        """Merges pose segments that are shorter than min_duration."""
-        if min_duration is None or min_duration <= 1:
-            return predictions
-
-        new_predictions = predictions.copy()
-        num_frames = len(new_predictions)
-        i = 0
-        while i < num_frames:
-            current_pose = new_predictions[i]
-            j = i
-            while j < num_frames and new_predictions[j] == current_pose:
-                j += 1
-            
-            duration = j - i
-            if duration < min_duration:
-                # Merge with the previous pose if it's not the first segment
-                if i > 0:
-                    prev_pose = new_predictions[i - 1]
-                    for k in range(i, j):
-                        new_predictions[k] = prev_pose
-            i = j
-        return new_predictions
-
-    @torch.no_grad()
-    def predict_frames(self, x, return_probabilities=True, return_attention=False, smoothing_window=20, min_pose_duration=10, inertia_factor=0.5):
-        """
-        Predict per-frame labels for sequences using sliding windows.
-        
-        Args:
-            x: List of sequences, each of shape (num_frames, num_features)
-            return_probabilities: Whether to return class probabilities.
-            return_attention: Whether to return attention weights.
-            smoothing_window: Size of the window for probability smoothing.
-            min_pose_duration: Minimum number of consecutive frames for a pose to be kept.
-            inertia_factor: Factor to boost probabilities based on the previous frame's prediction.
-
-        Returns:
-            predictions: List of per-frame predictions for each sequence.
-            probabilities: (optional) List of per-frame probability distributions.
-            attention: (optional) Dict with temporal and joint attention for each window.
-        """
-        self._check_fitted()
-        self.model.eval()
-        
-        all_predictions = []
-        all_probabilities = []
-        all_attention = {'temporal': [], 'joint': []} if return_attention else None
-        
-        for seq_features in x:
-            num_frames = len(seq_features)
-            
-            # Create windows
-            windows, _, frame_indices = self._create_windows(seq_features, None)
-            
-            if len(windows) == 0:
-                # Handle empty sequence
-                all_predictions.append(np.zeros(num_frames, dtype=np.int32))
-                if return_probabilities:
-                    all_probabilities.append(np.zeros((num_frames, self.num_classes)))
+        for seq_idx, (seq_x, seq_y) in enumerate(zip(x, y)):
+            if seq_x is None or len(seq_x) == 0:
+                skipped += 1
                 continue
             
-            # Predict in batches
-            seq_predictions = np.zeros(num_frames, dtype=np.int32)
-            seq_probabilities = np.zeros((num_frames, self.num_classes)) if return_probabilities else None
+            try:
+                seq_x = self._validate_sequence_shape(seq_x, seq_idx)
+                seq_y = np.array(seq_y)
+            except ValueError as e:
+                self._log(f"  [Warning] {e}")
+                skipped += 1
+                continue
             
-            for batch_start in range(0, len(windows), self.batch_size):
-                batch_end = min(batch_start + self.batch_size, len(windows))
-                batch_windows = windows[batch_start:batch_end]
-                batch_frame_indices = frame_indices[batch_start:batch_end]
-                
-                # Convert to tensor
-                batch_x = torch.FloatTensor(np.array(batch_windows)).to(self.device)
-                
-                # Forward pass
-                logits, temporal_weights, joint_weights = self.model(batch_x)
-                
-                # Get predictions and probabilities
-                preds = logits.argmax(dim=-1).cpu().numpy()
-                if return_probabilities:
-                    probs = torch.softmax(logits, dim=-1).cpu().numpy()
-                
-                # Assign predictions to corresponding frames
-                for i, frame_idx in enumerate(batch_frame_indices):
-                    if frame_idx < num_frames:
-                        seq_predictions[frame_idx] = preds[i]
-                        if return_probabilities:
-                            seq_probabilities[frame_idx] = probs[i]
-                
-                # Store attention if requested
-                if return_attention:
-                    if temporal_weights is not None:
-                        all_attention['temporal'].extend(temporal_weights.cpu().numpy())
-                    if joint_weights is not None:
-                        all_attention['joint'].extend(joint_weights.cpu().numpy())
+            M, T, V, C = seq_x.shape
             
-            if return_probabilities: # Always apply inertia if probabilities are returned
-                seq_probabilities = self._apply_temporal_inertia(
-                    seq_probabilities, 
-                    smoothing_window=smoothing_window,
-                    inertia_factor=inertia_factor
-                )
-                seq_predictions = np.argmax(seq_probabilities, axis=1)
-
-            # Post-process to remove short pose segments
-            if min_pose_duration:
-                seq_predictions = self._filter_short_poses(seq_predictions, min_pose_duration)
-
-            all_predictions.append(seq_predictions)
-            if return_probabilities:
-                all_probabilities.append(seq_probabilities)
+            if seq_idx == 0:
+                self._log(f"\n  First sequence analysis:")
+                self._log(f"    - Shape (M, T, V, C): {seq_x.shape}")
+                self._log(f"    - Labels shape: {seq_y.shape}")
+                self._log(f"    - Data range: [{seq_x.min():.3f}, {seq_x.max():.3f}]")
+            
+            if T < self.window_size:
+                self._log(f"  [Warning] Seq {seq_idx}: T={T} < window_size={self.window_size}, skipping")
+                skipped += 1
+                continue
+            
+            if padding is not None:
+                pad_width_x = [(0, 0), (pad_size, pad_size), (0, 0), (0, 0)]
+                seq_x = np.pad(seq_x, pad_width_x, mode='edge')
+                
+                if seq_y.ndim == 1:
+                    seq_y = np.pad(seq_y, (pad_size, pad_size), mode='edge')
+                else:
+                    pad_width_y = [(pad_size, pad_size)] + [(0, 0)] * (seq_y.ndim - 1)
+                    seq_y = np.pad(seq_y, pad_width_y, mode='edge')
+            
+            T_padded = seq_x.shape[1]
+            
+            for i in range(T_padded - self.window_size + 1):
+                window = seq_x[:, i:i + self.window_size, :, :]
+                label = seq_y[i + pad_size]
+                all_windows.append(window)
+                all_labels.append(label)
         
-        results = [all_predictions]
-        if return_probabilities:
-            results.append(all_probabilities)
-        if return_attention:
-            results.append(all_attention)
+        if not all_windows:
+            raise ValueError("No valid windows created! Check your input data shapes.")
         
-        return tuple(results) if len(results) > 1 else results[0]
+        windows_array = np.stack(all_windows, axis=0)
+        labels_array = np.array(all_labels)
+        
+        self._log(f"\n  Data preparation complete:")
+        self._log(f"    - Sequences processed: {len(x) - skipped}/{len(x)}")
+        self._log(f"    - Total windows: {len(windows_array)}")
+        self._log(f"    - Windows shape: {windows_array.shape}")
+        self._log(f"    - Expected: (N, M=1, T={self.window_size}, V=17, C=3)")
+        self._log(f"    - Labels shape: {labels_array.shape}")
+        
+        N, M, T, V, C = windows_array.shape
+        assert M == 1, f"Expected M=1, got M={M}"
+        assert T == self.window_size, f"Expected T={self.window_size}, got T={T}"
+        assert V == 17, f"Expected V=17, got V={V}"
+        assert C == 3, f"Expected C=3, got C={C}"
+        
+        self._log("    ✓ Shape validation passed!")
+        self._log("=" * 60 + "\n")
+        
+        return windows_array, labels_array
 
-    def _apply_temporal_inertia(self, probabilities, smoothing_window=3, inertia_factor=0.5):
+    def _augment_batch(self, bx, aug_range):
         """
-        Smooth probabilities and apply temporal inertia to resist switching.
+        Apply augmentation: multiply each value by a unique random scale per sample/joint/channel.
         
         Args:
-            probabilities: (num_frames, num_classes) array of probabilities.
-            smoothing_window: Size of the window for initial smoothing.
-            inertia_factor: Factor to boost probabilities based on the previous frame's prediction.
-            
-        Returns:
-            Adjusted probabilities.
-        """
-        num_frames, num_classes = probabilities.shape
+            bx: Tensor of shape (N, M, T, V, C)
+            aug_range: Tuple (min_scale, max_scale), e.g., (0.9, 1.1)
         
-        # 1. Initial Smoothing to reduce noise
-        if smoothing_window > 1:
-            smoothed_probs = np.zeros_like(probabilities)
-            for i in range(num_classes):
-                smoothed_probs[:, i] = np.convolve(probabilities[:, i], np.ones(smoothing_window)/smoothing_window, mode='same')
+        Returns:
+            Augmented tensor of same shape
+        
+        Each joint and each channel gets its own random multiplier (consistent across time).
+        Shape of random multipliers: (N, 1, 1, V, C)
+        """
+        if aug_range is None:
+            return bx
+        
+        low, high = aug_range
+        N, M, T, V, C = bx.shape
+        
+        # Generate unique random scale for each sample, joint, and channel
+        # Shape: (N, 1, 1, V, C) - same scale across M (persons) and T (time)
+        scales = torch.empty(N, 1, 1, V, C, device=bx.device, dtype=bx.dtype).uniform_(low, high)
+        
+        return bx * scales
+
+    def _forward(self, bx):
+        """Forward pass using model's extract_feat method."""
+        feat = self.model.extract_feat(bx)
+        logits = self.model.cls_head(feat)
+        return logits
+
+    def fit(self, x_train, y_train, x_val=None, y_val=None, epochs=50, lr=1e-3, batch_size=32, aug_range=None):
+        """
+        Train the classifier.
+        
+        Args:
+            x_train: List of training sequences, each (M, T, V, C) or (T, V, C)
+            y_train: List of training labels
+            x_val: Optional validation sequences
+            y_val: Optional validation labels
+            epochs: Number of training epochs
+            lr: Learning rate
+            batch_size: Batch size
+            aug_range: Tuple (min_scale, max_scale) for augmentation, e.g., (0.9, 1.1)
+                       Each joint's each channel value is multiplied by a unique random
+                       value from this range. Set to None to disable augmentation.
+        """
+        if self.model is None:
+            raise ValueError("Model not initialized. Provide model_cfg and num_classes.")
+
+        self._log("\n" + "=" * 60)
+        self._log("Starting Training...")
+        self._log("=" * 60)
+
+        # Freeze backbone, train only head
+        if hasattr(self.model, 'backbone'):
+            for param in self.model.backbone.parameters():
+                param.requires_grad = False
+            self._log("Backbone frozen. Training classification head only.")
+        
+        trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+        optimizer = torch.optim.AdamW(trainable_params, lr=lr)
+        criterion = nn.CrossEntropyLoss()
+        
+        self._log(f"Optimizer: AdamW (lr={lr})")
+        self._log(f"Trainable parameters: {sum(p.numel() for p in trainable_params):,}")
+        
+        # Log augmentation
+        if aug_range is not None:
+            self._log(f"Augmentation: scale range ({aug_range[0]}, {aug_range[1]})")
         else:
-            smoothed_probs = probabilities.copy()
+            self._log("Augmentation: disabled")
         
-        # 2. Apply Temporal Inertia
-        adjusted_probs = smoothed_probs.copy()
+        # Prepare data
+        train_windows, train_labels = self._prepare_training_data(x_train, y_train)
         
-        for i in range(1, num_frames):
-            # Boost current frame probabilities based on previous frame's adjusted probabilities
-            adjusted_probs[i] = adjusted_probs[i] + inertia_factor * adjusted_probs[i-1]
-            
-            # Re-normalize probabilities for the current frame
-            frame_sum = np.sum(adjusted_probs[i])
-            if frame_sum > 0:
-                adjusted_probs[i] /= frame_sum
-            
-        return adjusted_probs
-
-    def evaluate(self, x_test, y_test, return_report=True):
-        """
-        Evaluate model performance on test sequences.
+        if train_labels.ndim > 1 and train_labels.shape[1] > 1:
+            train_targets = np.argmax(train_labels, axis=1)
+        else:
+            train_targets = train_labels.astype(np.int64)
         
-        Args:
-            x_test: Test sequences
-            y_test: Test frame-level labels
-            return_report: Whether to return classification report
-        
-        Returns:
-            accuracy: Frame-level accuracy
-            report: (optional) Classification report dict
-        """
-        predictions = self.predict_frames(x_test, return_probabilities=False)
-        
-        # Flatten predictions and targets
-        all_preds = []
-        all_targets = []
-        
-        for seq_pred, seq_target in zip(predictions, y_test):
-            all_preds.extend(seq_pred)
-            
-            # Convert targets to class indices if needed
-            if seq_target.ndim == 2:  # One-hot encoded
-                all_targets.extend(np.argmax(seq_target, axis=1))
+        has_val = x_val is not None and y_val is not None
+        if has_val:
+            val_windows, val_labels = self._prepare_training_data(x_val, y_val)
+            if val_labels.ndim > 1 and val_labels.shape[1] > 1:
+                val_targets = np.argmax(val_labels, axis=1)
             else:
-                all_targets.extend(seq_target)
-        
-        accuracy = accuracy_score(all_targets, all_preds)
-        
-        if return_report:
-            report = classification_report(
-                all_targets, all_preds,
-                target_names=self.class_names,
-                output_dict=True
-            )
-            return accuracy, report
-        
-        return accuracy
-    
-    def plot_history(self, figsize=(12, 4)):
-        """Plot training history"""
-        if not self.history['train_loss']:
-            print("No training history to plot")
-            return
-        
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
-        
-        # Loss plot
-        ax1.plot(self.history['train_loss'], label='Train Loss')
-        if self.history['val_loss']:
-            ax1.plot(self.history['val_loss'], label='Val Loss')
-        ax1.set_xlabel('Epoch')
-        ax1.set_ylabel('Loss')
-        ax1.set_title('Training and Validation Loss')
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
-        
-        # Accuracy plot
-        ax2.plot(self.history['train_acc'], label='Train Acc')
-        if self.history['val_acc']:
-            ax2.plot(self.history['val_acc'], label='Val Acc')
-        ax2.set_xlabel('Epoch')
-        ax2.set_ylabel('Accuracy')
-        ax2.set_title('Training and Validation Accuracy')
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.show()
-    
-    def _check_fitted(self):
-        if self.model is None:
-            raise RuntimeError("Model not fitted. Call fit() first.")
-    
-    def save_model(self, path):
-        """Save the model to disk."""
-        if self.model is None:
-            raise RuntimeError("No model to save. Train a model first.")
-        torch.save(self.model, path)
-        if self.verbose:
-            print(f"Model saved to {path}")
-    
-    def load_model(self, path):
-        """Load a model from disk."""
-        self.model = torch.load(path, map_location=self.device, weights_only=False)
-        self.model.eval()
-        
-        if hasattr(self.model, 'num_classes') and self.num_classes != self.model.num_classes:
-            self.num_classes = self.model.num_classes
-        if hasattr(self.model, 'num_joint_features') and self.input_size != self.model.num_joint_features:
-            self.input_size = self.model.num_joint_features
+                val_targets = val_labels.astype(np.int64)
+
+        # Debug info
+        self._log("\n" + "-" * 40)
+        self._log("Debug: Input shape verification")
+        self._log("-" * 40)
+        self._log(f"  Train windows shape (N, M, T, V, C): {train_windows.shape}")
+        self._log(f"  Model expects: (N, M, T, V, C) -> extract_feat handles permutation")
+        self._log("-" * 40 + "\n")
+
+        # Training loop
+        for epoch in range(epochs):
+            epoch_start = time.time()
+            self.model.train()
             
-        if self.verbose:
-            print(f"Model loaded from {path}")
+            indices = np.random.permutation(len(train_windows))
+            total_loss = 0.0
+            correct = 0
+            
+            for batch_idx in range(0, len(indices), batch_size):
+                batch_indices = indices[batch_idx:batch_idx + batch_size]
+                
+                bx = torch.as_tensor(
+                    train_windows[batch_indices], 
+                    dtype=torch.float32, 
+                    device=self.device
+                )
+                by = torch.as_tensor(
+                    train_targets[batch_indices], 
+                    dtype=torch.long, 
+                    device=self.device
+                )
+                
+                # Apply augmentation during training
+                bx = self._augment_batch(bx, aug_range)
+                
+                optimizer.zero_grad()
+                logits = self._forward(bx)
+                loss = criterion(logits, by)
+                loss.backward()
+                optimizer.step()
+                
+                total_loss += loss.item() * len(batch_indices)
+                correct += (logits.argmax(1) == by).sum().item()
+            
+            train_loss = total_loss / len(train_windows)
+            train_acc = correct / len(train_windows)
+            
+            val_loss, val_acc = 0.0, 0.0
+            if has_val:
+                val_loss, val_acc = self._evaluate(val_windows, val_targets, criterion, batch_size)
+            
+            self.history['loss'].append(train_loss)
+            self.history['train_acc'].append(train_acc)
+            self.history['val_loss'].append(val_loss)
+            self.history['val_acc'].append(val_acc)
+            
+            elapsed = time.time() - epoch_start
+            eta = (epochs - epoch - 1) * elapsed
+            
+            self._log(
+                f"Epoch {epoch+1:3d}/{epochs} | "
+                f"Loss: {train_loss:.4f} | Acc: {train_acc:.2%} | "
+                f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2%} | "
+                f"{elapsed:.1f}s | ETA: {eta/60:.1f}min"
+            )
+        
+        self._log("\n" + "=" * 60)
+        self._log("Training Complete!")
+        self._log(f"  Final Train Acc: {train_acc:.2%}")
+        if has_val:
+            self._log(f"  Final Val Acc: {val_acc:.2%}")
+        self._log("=" * 60 + "\n")
+
+    def _evaluate(self, windows, targets, criterion, batch_size):
+        """Evaluate model on given data (no augmentation)."""
+        self.model.eval()
+        total_loss = 0.0
+        correct = 0
+        
+        with torch.no_grad():
+            for i in range(0, len(windows), batch_size):
+                batch_indices = np.arange(i, min(i + batch_size, len(windows)))
+                
+                bx = torch.as_tensor(
+                    windows[batch_indices], 
+                    dtype=torch.float32, 
+                    device=self.device
+                )
+                by = torch.as_tensor(
+                    targets[batch_indices], 
+                    dtype=torch.long, 
+                    device=self.device
+                )
+                
+                logits = self._forward(bx)
+                total_loss += criterion(logits, by).item() * len(batch_indices)
+                correct += (logits.argmax(1) == by).sum().item()
+        
+        return total_loss / len(windows), correct / len(windows)
+
+    def predict(self, x, return_probas=False):
+        """Predict classes for input sequences."""
+        if self.model is None:
+            raise ValueError("Model not initialized.")
+        
+        self.model.eval()
+        x = np.array(x, dtype=np.float32)
+        
+        if x.ndim == 3:
+            x = x[np.newaxis, np.newaxis, ...]
+        elif x.ndim == 4:
+            x = x[np.newaxis, ...]
+        
+        with torch.no_grad():
+            bx = torch.as_tensor(x, dtype=torch.float32, device=self.device)
+            logits = self._forward(bx)
+            probas = torch.softmax(logits, dim=1)
+            
+            if return_probas:
+                return probas.cpu().numpy()
+            return probas.argmax(1).cpu().numpy()
+
+    def predict_frame_by_frame(self, video_features, class_names=None, batch_size=64):
+        """Predict class for each frame using sliding window."""
+        if self.model is None:
+            raise ValueError("Model not initialized.")
+
+        feat = np.array(video_features, dtype=np.float32)
+        if feat.ndim == 4 and feat.shape[0] == 1:
+            feat = feat[0]
+        elif feat.ndim == 4:
+            feat = feat[0]
+        
+        total_frames = feat.shape[0]
+        half_window = self.window_size // 2
+
+        padded_feat = np.pad(
+            feat, 
+            [(half_window, half_window), (0, 0), (0, 0)], 
+            mode='edge'
+        )
+
+        all_windows = []
+        for i in range(total_frames):
+            window = padded_feat[i:i + self.window_size]
+            window = window[np.newaxis, ...]
+            all_windows.append(window)
+        
+        all_windows = np.stack(all_windows, axis=0)
+
+        self.model.eval()
+        all_preds = []
+        
+        with torch.no_grad():
+            for i in range(0, len(all_windows), batch_size):
+                batch = all_windows[i:i + batch_size]
+                bx = torch.as_tensor(batch, dtype=torch.float32, device=self.device)
+                logits = self._forward(bx)
+                preds = logits.argmax(1).cpu().numpy()
+                all_preds.extend(preds)
+
+        if class_names:
+            return [class_names[p] for p in all_preds]
+        return all_preds
+
+    def save_model(self, path):
+        """Save model checkpoint."""
+        checkpoint = {
+            'state_dict': self.model.state_dict(),
+            'cfg': self.model_cfg,
+            'num_classes': self.num_classes,
+            'window_size': self.window_size,
+            'history': self.history
+        }
+        torch.save(checkpoint, path)
+        self._log(f"Model saved to {path}")
+
+    def load_model(self, path):
+        """Load model from checkpoint."""
+        checkpoint = torch.load(path, map_location=self.device)
+        self.model_cfg = checkpoint['cfg']
+        self.num_classes = checkpoint['num_classes']
+        self.window_size = checkpoint.get('window_size', self.window_size)
+        self.history = checkpoint.get('history', self.history)
+        self._init_model()
+        self.model.load_state_dict(checkpoint['state_dict'])
+        self.model.eval()
+        self._log(f"Model loaded from {path}")
+
+    @classmethod
+    def load(cls, path, device='cpu', verbose=True):
+        """Class method to load a saved model."""
+        instance = cls(model_cfg=None, num_classes=None, device=device, verbose=verbose)
+        instance.load_model(path)
+        return instance

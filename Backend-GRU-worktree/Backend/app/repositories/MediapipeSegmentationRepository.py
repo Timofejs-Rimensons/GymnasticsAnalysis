@@ -100,7 +100,7 @@ class MediapipeSegmentationRepository:
     # Video processing
     # ------------------------------------------------------------ #
 
-    def process_video_old(self, input_video_path):
+    def process_video(self, input_video_path):
         """
         Processes a video to extract normalized pose data for each frame.
 
@@ -305,110 +305,4 @@ class MediapipeSegmentationRepository:
 
                 feature_tensor[frame_index, segment_index] = [similarity_to_torso, similarity_to_parent, similarity_to_gravity]
 
-        return frames, feature_tensor, mask
-    
-    def _normalize_world_pose(self, world_landmarks):
-        """
-        Extracts world landmarks and ensures they are in a (13, 3) array.
-        World landmarks are already centered at the hips (origin 0,0,0) 
-        and measured in meters, preserving aspect ratio.
-        """
-        if world_landmarks is None:
-            return None
-
-        # Extract only the 13 joints we care about
-        # world_landmarks.landmark[i] has .x, .y, .z in meters
-        world_coords = np.array([
-            [lm.x, lm.y, lm.z]
-            for lm in [world_landmarks.landmark[i] for i in self.joint_ids]
-        ])
-
-        return world_coords
-
-    def process_video(self, input_video_path):
-        video_capture = cv2.VideoCapture(input_video_path)
-        if not video_capture.isOpened():
-            raise IOError(f"Cannot open video: {input_video_path}")
-
-        frames = []
-        world_poses = []
-
-        while video_capture.isOpened():
-            success, frame = video_capture.read()
-            if not success: break
-
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            result = self.pose.process(frame_rgb)
-
-            # Use world_landmarks instead of pose_landmarks
-            world_pose = self._normalize_world_pose(result.pose_world_landmarks)
-
-            # Store metadata for visualization (optional, uses standard landmarks)
-            frames.append({
-                "has_pose": world_pose is not None,
-                "world_pose": world_pose
-            })
-
-            world_poses.append(world_pose)
-
-        video_capture.release()
-        
-        # Reuse your existing stacking logic
-        pose_tensor, mask = self._stack_tensor(world_poses)
-        return frames, pose_tensor, mask
-
-    def _map_mp13_to_coco17(self, pose_13):
-        """
-        Maps the 13-keypoint MediaPipe subset to the 17-keypoint COCO format.
-        
-        MediaPipe Subset (Your self.joint_ids):
-        0: nose, 1: l_sho, 2: r_sho, 3: l_elb, 4: r_elb, 5: l_wri, 6: r_wri,
-        7: l_hip, 8: r_hip, 9: l_kne, 10: r_kne, 11: l_ank, 12: r_ank
-        
-        COCO 17 Format:
-        0: nose, 1: l_eye, 2: r_eye, 3: l_ear, 4: r_ear, 5: l_sho, 6: r_sho, 
-        7: l_elb, 8: r_elb, 9: l_wri, 10: r_wri, 11: l_hip, 12: r_hip, 
-        13: l_kne, 14: r_kne, 15: l_ank, 16: r_ank
-        """
-        if pose_13.size == 0:
-            return np.zeros((17, 3))
-
-        # Initialize COCO pose with zeros (T, 17, 3) or (17, 3)
-        # We assume input is (13, 3) representing one frame
-        coco_pose = np.zeros((17, 3))
-
-        # 1. Nose
-        coco_pose[0] = pose_13[0]
-
-        # 2. Eyes/Ears (Indices 1,2,3,4) 
-        # MediaPipe pose model doesn't track ears well, and we filtered eyes. 
-        # Strategy: Fill with Nose coordinates or keep as Zeros. 
-        # Keeping as zeros is safer for the Graph Conv to ignore them.
-
-        # 3. Arms (Shoulders, Elbows, Wrists) -> COCO 5-10
-        # MP indices 1-6 map to COCO 5-10
-        coco_pose[5:11] = pose_13[1:7]
-
-        # 4. Legs (Hips, Knees, Ankles) -> COCO 11-16
-        # MP indices 7-12 map to COCO 11-16
-        coco_pose[11:17] = pose_13[7:13]
-
-        return coco_pose
-
-    def process_video_stgcn(self, input_video_path):
-        frames, pose_tensor, mask = self.process_video(input_video_path)
-        
-        if pose_tensor.size == 0:
-            return frames, np.array([]), mask
-
-        # pose_tensor is (T, 13, 3)
-        num_frames = pose_tensor.shape[0]
-        coco_tensor = np.zeros((num_frames, 17, 3))
-
-        for t in range(num_frames):
-            coco_tensor[t] = self._map_mp13_to_coco17(pose_tensor[t])
-
-        # Expand for PYSKL: (M, T, V, C) -> (1, T, 17, 3)
-        feature_tensor = np.expand_dims(coco_tensor, axis=0) 
-        
         return frames, feature_tensor, mask
