@@ -36,21 +36,23 @@ import math
 class VaultLabeler:
     """Interactive tool for labeling vault exercise phases with semi-automation"""
     
-    def __init__(self, confidence_threshold=0.5):
+    def __init__(self, confidence_threshold=0.7):
         """
         Initialize the vault labeler
         
         Args:
             confidence_threshold: Confidence threshold for MediaPipe pose detection
         """
-        # MediaPipe setup with latest API
+        # MediaPipe setup with enhanced configuration for better tracking
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
             static_image_mode=False,
-            model_complexity=2,
-            enable_segmentation=False,
+            model_complexity=2,  # Highest accuracy model
+            smooth_landmarks=True,  # Enable landmark smoothing
+            enable_segmentation=True,  # Enable segmentation for better tracking
             min_detection_confidence=confidence_threshold,
-            min_tracking_confidence=confidence_threshold
+            min_tracking_confidence=confidence_threshold,
+            smooth_segmentation=True  # Smooth segmentation mask
         )
         self.mp_drawing = mp.solutions.drawing_utils
         self.mp_drawing_styles = mp.solutions.drawing_styles
@@ -190,8 +192,19 @@ class VaultLabeler:
             
             self.frames.append(frame.copy())
             
-            # Process with MediaPipe for skeleton overlay
+            # Preprocess frame for better detection
+            # Convert to RGB
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Enhance contrast for better pose detection
+            lab = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            l = clahe.apply(l)
+            enhanced = cv2.merge([l, a, b])
+            rgb_frame = cv2.cvtColor(enhanced, cv2.COLOR_LAB2RGB)
+            
+            # Process with MediaPipe for skeleton overlay
             results = self.pose.process(rgb_frame)
             
             if results.pose_landmarks:
@@ -312,11 +325,19 @@ class VaultLabeler:
         if self.current_frame_idx < len(self.pose_sequence):
             pose_landmarks = self.pose_sequence[self.current_frame_idx]
             if pose_landmarks:
+                # Custom drawing specs for better visibility
+                landmark_spec = self.mp_drawing.DrawingSpec(
+                    color=(0, 255, 0), thickness=3, circle_radius=4
+                )
+                connection_spec = self.mp_drawing.DrawingSpec(
+                    color=(255, 255, 0), thickness=3
+                )
                 self.mp_drawing.draw_landmarks(
                     frame,
                     pose_landmarks,
                     self.mp_pose.POSE_CONNECTIONS,
-                    landmark_drawing_spec=self.mp_drawing_styles.get_default_pose_landmarks_style()
+                    landmark_drawing_spec=landmark_spec,
+                    connection_drawing_spec=connection_spec
                 )
         
         # Draw timeline
@@ -510,7 +531,7 @@ def batch_label_videos(video_directory: str, output_csv: str = "vault_labels.csv
         os.remove(output_csv)
         print(f"Removed existing {output_csv}")
     
-    labeler = VaultLabeler(confidence_threshold=0.5)
+    labeler = VaultLabeler(confidence_threshold=0.7)
     
     for i, video_path in enumerate(video_files):
         print(f"\n{'='*60}")
@@ -566,7 +587,7 @@ def main():
         if not output_csv:
             output_csv = "vault_labels.csv"
         
-        labeler = VaultLabeler(confidence_threshold=0.5)
+        labeler = VaultLabeler(confidence_threshold=0.7)
         labeler.run(video_path, output_csv)
         
     elif choice == '2':
