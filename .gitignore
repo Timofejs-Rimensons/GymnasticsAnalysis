@@ -186,3 +186,4 @@ cython_debug/
 test_labels.csv
 auto_labels.csv
 gymnastics_labels.csv
+videos/
