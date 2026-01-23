@@ -1,36 +1,30 @@
 {
-    "overall_score": 57,
+    "overall_score": 58,
     "max_score": 100,
-    "percentage": 57.27119273190044,
+    "percentage": 57.52854567307691,
     "categories": [
         {
             "name": "Poses",
             "poses": [
                 {
                     "name": "Starting",
-                    "score": 34,
+                    "score": 35,
                     "max_score": 100,
                     "description": "Analysis of Starting phase",
                     "improvement_needed": false,
                     "errors": [
                         {
                             "criterion": "arms_vertical_angle",
-                            "severity": "high",
-                            "measurement": "0.0\u00b0 from vertical",
                             "improvement": "Raise your arms higher overhead",
                             "frequency": 1.0
                         },
                         {
                             "criterion": "back_leg_straight",
-                            "severity": "high",
-                            "measurement": "Knee bent at 0.0\u00b0 (should be ~180\u00b0)",
                             "improvement": "Straighten your back leg completely",
                             "frequency": 0.9705882352941176
                         },
                         {
                             "criterion": "step_distance",
-                            "severity": "medium",
-                            "measurement": "0.00m step distance",
                             "improvement": "Adjust your step size - take a bigger step for more momentum",
                             "frequency": 0.10294117647058823
                         }
@@ -45,8 +39,6 @@
                     "errors": [
                         {
                             "criterion": "back_leg_straight",
-                            "severity": "medium",
-                            "measurement": "Knee bent at 142.0\u00b0",
                             "improvement": "Keep your back leg straight throughout the swing",
                             "frequency": 0.8461538461538461
                         }
@@ -61,22 +53,16 @@
                     "errors": [
                         {
                             "criterion": "hand_placement",
-                            "severity": "low",
-                            "measurement": "Hand width is 1.5x shoulder width",
                             "improvement": "Place your hands shoulder-width apart",
                             "frequency": 0.9375
                         },
                         {
                             "criterion": "back_straightness",
-                            "severity": "high",
-                            "measurement": "34.0\u00b0 deviation from straight",
                             "improvement": "Engage your core to maintain a straight line from hands to feet",
                             "frequency": 0.421875
                         },
                         {
                             "criterion": "leg_alignment",
-                            "severity": "medium",
-                            "measurement": "0.20m deviation from vertical",
                             "improvement": "Focus on stacking your ankles over your hips and shoulders",
                             "frequency": 0.265625
                         }
@@ -91,8 +77,6 @@
                     "errors": [
                         {
                             "criterion": "knee_flexion",
-                            "severity": "medium",
-                            "measurement": "Knee angle at 154.8\u00b0",
                             "improvement": "Bend your knees to absorb the landing impact",
                             "frequency": 1.0
                         }
