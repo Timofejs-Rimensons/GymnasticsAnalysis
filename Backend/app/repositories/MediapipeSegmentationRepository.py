@@ -330,6 +330,9 @@ class MediapipeSegmentationRepository:
         if not video_capture.isOpened():
             raise IOError(f"Cannot open video: {input_video_path}")
 
+        frame_width = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
         frames = []
         world_poses = []
 
@@ -340,13 +343,24 @@ class MediapipeSegmentationRepository:
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             result = self.pose.process(frame_rgb)
 
-            # Use world_landmarks instead of pose_landmarks
+            # Get world pose for analytics
             world_pose = self._normalize_world_pose(result.pose_world_landmarks)
+            
+            # Get normalized pose for visualization
+            normalized_pose, mid_hip_reference, bounding_box_size, min_coordinates = self._normalize_pose(
+                result.pose_landmarks,
+                frame_width,
+                frame_height
+            )
 
-            # Store metadata for visualization (optional, uses standard landmarks)
+            # Store both for analytics and visualization
             frames.append({
                 "has_pose": world_pose is not None,
-                "world_pose": world_pose
+                "world_pose": world_pose,
+                "pose_3d": normalized_pose,
+                "reference": mid_hip_reference,
+                "bbox_size": bounding_box_size,
+                "min_xy": min_coordinates
             })
 
             world_poses.append(world_pose)
