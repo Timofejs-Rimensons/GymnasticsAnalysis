@@ -1,8 +1,10 @@
-FROM node:20-alpine AS base
+FROM node:20-bookworm-slim AS base
+
+# Install openssl for Prisma compatibility
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json package-lock.json* ./

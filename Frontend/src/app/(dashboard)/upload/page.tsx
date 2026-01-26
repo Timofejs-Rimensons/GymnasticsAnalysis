@@ -9,6 +9,7 @@ import { Navbar } from "@/components/Navbar";
 import { ApiService, StatusResponse, AnalysisResult } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 import { useSearchParams } from "next/navigation";
+import { useSession, getSession } from "next-auth/react";
 
 interface VideoUpload {
   id: string;
@@ -84,6 +85,7 @@ function InstructionsModal({ onClose }: { onClose: () => void }) {
 function UploadPageContent() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const [videos, setVideos] = useState<VideoUpload[]>([]);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
@@ -160,9 +162,13 @@ function UploadPageContent() {
 
   const processVideo = async (videoUpload: VideoUpload) => {
     try {
+      // Get fresh session to ensure we have the user ID if logged in
+      const session = await getSession();
+      const userId = session?.user?.id;
+
       // 1. Upload
       updateVideoStatus(videoUpload.id, { status: "processing", progress: 10 });
-      const uploadResp = await ApiService.uploadVideo(videoUpload.file);
+      const uploadResp = await ApiService.uploadVideo(videoUpload.file, userId);
       
       const pid = uploadResp.pid;
       setVideos(prev => prev.map(v => v.id === videoUpload.id ? { ...v, id: pid } : v));

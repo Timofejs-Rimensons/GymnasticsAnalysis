@@ -7,52 +7,78 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-}
-
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  accounts      Account[]
+  email         String    @unique
+  password      String    @map("password_hash")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+  lastLogin     DateTime? @map("last_login")
+  
   sessions      Session[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  analyses      Analysis[]
+
+  @@map("users")
 }
 
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id") @db.Uuid
+  expires      DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([identifier, token])
+  @@map("sessions")
+}
+
+model Analysis {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Video metadata
+  fileName     String   @map("file_name")
+  exerciseType String   @map("exercise_type")
+
+  // Video storage (stored as binary data in PostgreSQL)
+  inputVideo   Bytes?   @map("input_video")
+  inputVideoSize Int?   @map("input_video_size")
+  inputVideoMimeType String? @map("input_video_mime_type")
+
+  outputVideo  Bytes?   @map("output_video")
+  outputVideoSize Int?  @map("output_video_size")
+  outputVideoMimeType String? @map("output_video_mime_type")
+
+  // Processing status
+  status       String   @default("pending")
+  progress     Decimal? @default(0) @db.Decimal(3, 2)
+  errorMessage String?  @map("error_message")
+
+  // Analysis results
+  overallScore Decimal? @map("overall_score") @db.Decimal(5, 2)
+  maxScore     Decimal? @map("max_score") @db.Decimal(5, 2)
+  percentage   Decimal? @db.Decimal(5, 2)
+  resultsJson  Json?    @map("results_json")
+
+  // Generated reports (stored as binary)
+  pdfReport    Bytes?   @map("pdf_report")
+  pdfReportSize Int?    @map("pdf_report_size")
+  
+  jsonReport   Json?    @map("json_report")
+
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@map("analyses")
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
 }
