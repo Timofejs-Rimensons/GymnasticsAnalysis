@@ -1,0 +1,41 @@
+services:
+  backend:
+    image: ghcr.io/tofa-rimensons/gymnastics-backend:latest
+    expose:
+      - 8000
+    volumes:
+      - temp_data:/app/.temp
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8000' || exit 1"]
+      interval: 10s
+      timeout: 10s
+
+  frontend:
+    image: ghcr.io/tofa-rimensons/gymnastics-frontend:latest
+    ports:
+      - "8080:80"
+    environment:
+      - VITE_API_BASE_URL=/api
+      # Backend API URL
+      - NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+      - BACKEND_URL=http://127.0.0.1:8000/api
+
+      # NextAuth Configuration
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=development-secret-key-123
+
+      # PostgreSQL Database (for local Docker setup)
+      - DATABASE_URL=postgresql://gymnastics:gymnastics_dev_password@localhost:5433/gymnastics_db
+
+      # Azure Blob Storage (Azurite emulator for local development)
+      - AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;
+      - AZURE_STORAGE_CONTAINER=gymnastics-videos
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "--interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+
+volumes:
+  temp_data:
