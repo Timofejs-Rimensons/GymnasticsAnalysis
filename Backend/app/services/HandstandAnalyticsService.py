@@ -25,6 +25,8 @@ class HandstandAnalyticsService(BaseAnalyticsService):
             return self.analyze_swing(pose_3d)
         elif pose_name == 'Handstand':
             return self.analyze_handstand(pose_3d)
+        elif pose_name == 'HandPlacement':
+            return self.analyze_hand_placement(pose_3d)
         elif pose_name == 'Landing':
             return self.analyze_landing(pose_3d)
         else:
@@ -266,46 +268,11 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 feedback['bone_scores']
             )
 
-        # 3. Hand width
-        left_wrist = pose_3d[self.JOINT_MAP['left_wrist']]
-        right_wrist = pose_3d[self.JOINT_MAP['right_wrist']]
-        left_shoulder = pose_3d[self.JOINT_MAP['left_shoulder']]
-        right_shoulder = pose_3d[self.JOINT_MAP['right_shoulder']]
-        
-        hand_width = self.calculate_distance(left_wrist, right_wrist)
-        shoulder_width = self.calculate_distance(left_shoulder, right_shoulder)
-        hand_width_ratio = hand_width / shoulder_width if shoulder_width > 0 else 0
-        feedback['measurements']['hand_width_ratio'] = hand_width_ratio
-
-        if 'hand_width_ratio' in criteria:
-            threshold = criteria['hand_width_ratio']
-            min_ratio = threshold.get('min', 0.9)
-            max_ratio = threshold.get('max', 1.3)
-
-            hand_bone_score = 1.0 # Default good
-            if not (min_ratio <= hand_width_ratio <= max_ratio):
-                deviation = min(abs(hand_width_ratio - min_ratio), abs(hand_width_ratio - max_ratio))
-                if deviation > 0.3: # Example threshold for 'bad'
-                    hand_bone_score = 0.0
-                elif deviation > 0.15: # Example threshold for 'mid'
-                    hand_bone_score = 0.5
-
-                feedback['errors'].append({'criterion': 'hand_placement', 'improvement': criteria['hand_width_ratio'].get('tip')})
-                feedback['score'] -= 0.15 # Fixed penalty
-            
-            # Affects wrists segments
-            feedback['bone_scores'] = self._calculate_bone_scores_from_criterion(
-                hand_bone_score,
-                [segment_map[(self.JOINT_MAP['left_elbow'], self.JOINT_MAP['left_wrist'])],    # Left Forearm
-                 segment_map[(self.JOINT_MAP['right_elbow'], self.JOINT_MAP['right_wrist'])]],    # Right Forearm
-                feedback['bone_scores']
-            )
-
-        # 4. Shoulders over arms
+        # 3. Shoulders over arms
         left_wrist = pose_3d[self.JOINT_MAP['left_wrist']]
         left_shoulder = pose_3d[self.JOINT_MAP['left_shoulder']]
         left_elbow = pose_3d[self.JOINT_MAP['left_elbow']]
-        
+
         shoulder_arm_alignment = self.calculate_vertical_alignment([left_wrist, left_elbow, left_shoulder])
         feedback['measurements']['shoulder_arm_alignment'] = shoulder_arm_alignment
         
@@ -325,6 +292,101 @@ class HandstandAnalyticsService(BaseAnalyticsService):
 
             feedback['bone_scores'] = self._calculate_bone_scores_from_criterion(
                 arm_alignment_bone_score,
+                [segment_map[(self.JOINT_MAP['left_shoulder'], self.JOINT_MAP['left_elbow'])],    # Left Upper Arm
+                 segment_map[(self.JOINT_MAP['left_elbow'], self.JOINT_MAP['left_wrist'])],       # Left Forearm
+                 segment_map[(self.JOINT_MAP['right_shoulder'], self.JOINT_MAP['right_elbow'])],  # Right Upper Arm
+                 segment_map[(self.JOINT_MAP['right_elbow'], self.JOINT_MAP['right_wrist'])]],    # Right Forearm
+                feedback['bone_scores']
+            )
+
+        feedback['score'] = max(0.0, feedback['score'])
+        return feedback
+
+    def analyze_hand_placement(self, pose_3d: np.ndarray) -> Dict:
+        """
+        Analyze hand placement during handstand.
+        Evaluates hand width and forward distance from shoulders.
+        """
+        criteria = self.config.get('HandPlacement', {}).get('criteria', {})
+        feedback = {
+            'measurements': {},
+            'errors': [],
+            'score': 1.0, # Start with perfect score
+            'bone_scores': {i: 1.0 for i in range(10)}
+        }
+
+        segment_map = self._get_segment_map()
+
+        # Get joint positions
+        left_wrist = pose_3d[self.JOINT_MAP['left_wrist']]
+        right_wrist = pose_3d[self.JOINT_MAP['right_wrist']]
+        left_shoulder = pose_3d[self.JOINT_MAP['left_shoulder']]
+        right_shoulder = pose_3d[self.JOINT_MAP['right_shoulder']]
+
+        # Calculate base measurements
+        hand_width = self.calculate_distance(left_wrist, right_wrist)
+        shoulder_width = self.calculate_distance(left_shoulder, right_shoulder)
+
+        # 1. Hand width ratio (spacing between hands)
+        hand_width_ratio = hand_width / shoulder_width if shoulder_width > 0 else 0
+        feedback['measurements']['hand_width_ratio'] = hand_width_ratio
+
+        if 'hand_width_ratio' in criteria:
+            threshold = criteria['hand_width_ratio']
+            min_ratio = threshold.get('min', 0.8)
+            max_ratio = threshold.get('max', 1.5)
+
+            hand_bone_score = 1.0 # Default good
+            if not (min_ratio <= hand_width_ratio <= max_ratio):
+                deviation = min(abs(hand_width_ratio - min_ratio), abs(hand_width_ratio - max_ratio))
+                if deviation > 0.3: # Example threshold for 'bad'
+                    hand_bone_score = 0.0
+                elif deviation > 0.15: # Example threshold for 'mid'
+                    hand_bone_score = 0.5
+
+                feedback['errors'].append({'criterion': 'hand_width', 'improvement': criteria['hand_width_ratio'].get('tip')})
+                feedback['score'] -= 0.4 # Fixed penalty
+
+            # Affects forearm segments
+            feedback['bone_scores'] = self._calculate_bone_scores_from_criterion(
+                hand_bone_score,
+                [segment_map[(self.JOINT_MAP['left_elbow'], self.JOINT_MAP['left_wrist'])],    # Left Forearm
+                 segment_map[(self.JOINT_MAP['right_elbow'], self.JOINT_MAP['right_wrist'])]],    # Right Forearm
+                feedback['bone_scores']
+            )
+
+        # 2. Hand forward distance (horizontal distance from shoulders)
+        wrist_center = (left_wrist + right_wrist) / 2
+        shoulder_center = (left_shoulder + right_shoulder) / 2
+
+        # Calculate horizontal distance (in XZ plane, excluding Y/vertical)
+        hand_forward_distance = np.sqrt(
+            (wrist_center[0] - shoulder_center[0])**2 +
+            (wrist_center[2] - shoulder_center[2])**2
+        )
+        # Normalize by shoulder width for relative measurement
+        hand_forward_ratio = hand_forward_distance / shoulder_width if shoulder_width > 0 else 0
+        feedback['measurements']['hand_forward_ratio'] = hand_forward_ratio
+
+        if 'hand_forward_distance' in criteria:
+            threshold = criteria['hand_forward_distance']
+            min_ratio = threshold.get('min', 0.3)
+            max_ratio = threshold.get('max', 0.7)
+
+            placement_bone_score = 1.0 # Default good
+            if not (min_ratio <= hand_forward_ratio <= max_ratio):
+                deviation = min(abs(hand_forward_ratio - min_ratio), abs(hand_forward_ratio - max_ratio))
+                if deviation > 0.3: # Example threshold for 'bad'
+                    placement_bone_score = 0.0
+                elif deviation > 0.15: # Example threshold for 'mid'
+                    placement_bone_score = 0.5
+
+                feedback['errors'].append({'criterion': 'hand_forward_distance', 'improvement': criteria['hand_forward_distance'].get('tip')})
+                feedback['score'] -= 0.6 # Fixed penalty
+
+            # Affects all arm segments
+            feedback['bone_scores'] = self._calculate_bone_scores_from_criterion(
+                placement_bone_score,
                 [segment_map[(self.JOINT_MAP['left_shoulder'], self.JOINT_MAP['left_elbow'])],    # Left Upper Arm
                  segment_map[(self.JOINT_MAP['left_elbow'], self.JOINT_MAP['left_wrist'])],       # Left Forearm
                  segment_map[(self.JOINT_MAP['right_shoulder'], self.JOINT_MAP['right_elbow'])],  # Right Upper Arm
