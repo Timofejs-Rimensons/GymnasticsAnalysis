@@ -20,12 +20,15 @@ export default function HistoryPage() {
         console.log("🔍 History - Session:", session);
         console.log("🔍 History - User ID:", userId);
 
-        const data = await ApiService.getHistory(userId);
-        const mapped = data.map((item: any) => ({
+        const response = await ApiService.getHistory(userId);
+        const mapped = response.data.map((item: any) => ({
             id: item.id,
+            // Map created_at to date
             date: item.created_at ? new Date(item.created_at).toLocaleDateString() : "Unknown",
-            exerciseType: item.exerciseType || "Unknown",
-            score: item.score !== null && item.score !== undefined ? item.score : null,
+            // Map exercise_type to exerciseType
+            exerciseType: item.exercise_type || "Unknown",
+            // Use .score (as formatted by API)
+            score: item.score || 0,
             status: item.status,
             thumbnailUrl: null
         }));

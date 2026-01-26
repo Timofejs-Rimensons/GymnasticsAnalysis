@@ -10,7 +10,7 @@ import shutil
 import bcrypt
 
 from services.ProcessingPipelineService import ProcessingPipelineService
-from database import get_database
+from database_simple import get_database
 
 router = APIRouter()
 processing_pipeline_service = ProcessingPipelineService()
@@ -324,38 +324,30 @@ async def get_history(user_id: str = Header(None, alias="X-User-Id")):
     """
     Get all analyses for the current user.
     """
-    print(f"🔍 History endpoint called with user_id: {user_id}")
-
     if not user_id:
-        print("❌ No user_id provided, returning empty array")
         return []
 
     try:
         db = get_database()
         history = db.get_user_analyses(user_id)
-
-        print(f"📦 Found {len(history)} analyses for user {user_id}")
-
+        
         result = []
         for item in history:
-            analysis_data = {
+            result.append({
                 "id": str(item['id']),
                 "fileName": item['file_name'],
-                "exercise_type": item['exercise_type'],  # snake_case to match frontend
-                "exerciseType": item['exercise_type'],    # ALSO add camelCase
+                "exercise_type": item['exercise_type'],
+                # Use 'created_at' instead of 'uploadedAt'
                 "created_at": item['created_at'].isoformat() if item.get('created_at') else None,
                 "status": item['status'],
+                # Map 'overall_score' to 'score' for frontend consistency
                 "score": float(item['overall_score']) if item.get('overall_score') is not None else None,
                 "maxScore": float(item['max_score']) if item.get('max_score') is not None else None
-            }
-            result.append(analysis_data)
-            print(f"  - {item['file_name']}: {item['exercise_type']}, score={item.get('overall_score')}")
-
+            })
+            
         return result
     except Exception as e:
-        print(f"❌ Error fetching history: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error fetching history: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
 
 
@@ -371,12 +363,17 @@ async def register_user(register_request: RegisterRequest):
     Register a new user
     """
     try:
+        db = get_database()
+        
+        # Check if user already exists
+        if db.get_user_by_email(register_request.email):
+            raise HTTPException(status_code=400, detail="User with this email already exists")
+
         # Hash the password
         password_hash = bcrypt.hashpw(register_request.password.encode('utf-8'), bcrypt.gensalt())
         
         # Register user in database
-        db = get_database()
-        user = db.register_user(
+        user = db.create_user(
             email=register_request.email,
             password_hash=password_hash.decode('utf-8'),
             name=register_request.name
@@ -385,14 +382,19 @@ async def register_user(register_request: RegisterRequest):
         return {
             "status": "success",
             "user": {
-                "id": user["id"],
+                "id": str(user["id"]),
                 "email": user["email"],
                 "name": user["name"],
                 "created_at": user["created_at"],
                 "updated_at": user["updated_at"]
             }
         }
+    except HTTPException as e:
+        raise e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        print(f"Registration error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")

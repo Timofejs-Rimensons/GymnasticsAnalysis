@@ -13,8 +13,11 @@ export default function ProfilePage() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const history = await ApiService.getHistory();
-        const total = history.length;
+        // Get first page to calculate stats (we'll use pagination.total for total count)
+        // For accurate stats, we might want to fetch all, but for performance we'll use the first page
+        const historyResponse = await ApiService.getHistory(undefined, 1, 100); // Get up to 100 records for stats
+        const history = historyResponse.data;
+        const total = historyResponse.pagination.total; // Use total from pagination
         const completed = history.filter((h: any) => h.status === "completed" && h.score !== null);
         const avgScore = completed.length > 0 
            ? completed.reduce((acc: number, curr: any) => acc + (curr.score || 0), 0) / completed.length 

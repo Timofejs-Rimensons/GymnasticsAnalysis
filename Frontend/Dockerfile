@@ -19,6 +19,8 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED 1
 
 # Generate Prisma Client
+# Provide dummy DATABASE_URL for build time (will be overridden at runtime)
+ENV DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy
 RUN npx prisma generate
 RUN mkdir -p public
 RUN npm run build
@@ -33,7 +35,16 @@ ENV NEXT_TELEMETRY_DISABLED 1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+# Install wget for health check (netcat removed as start.sh is removed)
+RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/public ./public
+
+# Copy Prisma client (already generated during build)
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+
+
 
 # Set the correct permission for prerender cache
 RUN mkdir .next && chown nextjs:nodejs .next
@@ -49,4 +60,5 @@ EXPOSE 80
 ENV PORT 80
 ENV HOSTNAME "0.0.0.0"
 
+# Run the standalone server directly
 CMD ["node", "server.js"]

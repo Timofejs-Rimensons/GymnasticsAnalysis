@@ -27,7 +27,7 @@ model User {
 
 model Session {
   id           String   @id @default(uuid()) @db.Uuid
-  sessionToken String   @unique @map("session_token")
+  sessionToken String   @unique @db.VarChar(500) @map("session_token")
   userId       String   @map("user_id") @db.Uuid
   expires      DateTime @map("expires_at")
   createdAt    DateTime @default(now()) @map("created_at")
@@ -35,6 +35,9 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sessions")
+  @@index([userId])
+  @@index([sessionToken])
+  @@index([expires])
 }
 
 model Analysis {
@@ -43,20 +46,20 @@ model Analysis {
   user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Video metadata
-  fileName     String   @map("file_name")
-  exerciseType String   @map("exercise_type")
+  fileName     String   @db.VarChar(500) @map("file_name")
+  exerciseType String   @db.VarChar(100) @map("exercise_type")
 
   // Video storage (stored as binary data in PostgreSQL)
   inputVideo   Bytes?   @map("input_video")
   inputVideoSize Int?   @map("input_video_size")
-  inputVideoMimeType String? @map("input_video_mime_type")
-
+  inputVideoMimeType String? @db.VarChar(100) @default("video/mp4") @map("input_video_mime_type")
+  
   outputVideo  Bytes?   @map("output_video")
   outputVideoSize Int?  @map("output_video_size")
-  outputVideoMimeType String? @map("output_video_mime_type")
+  outputVideoMimeType String? @db.VarChar(100) @default("video/mp4") @map("output_video_mime_type")
 
   // Processing status
-  status       String   @default("pending")
+  status       String   @db.VarChar(50) @default("pending")
   progress     Decimal? @default(0) @db.Decimal(3, 2)
   errorMessage String?  @map("error_message")
 
@@ -80,5 +83,6 @@ model Analysis {
   @@map("analyses")
   @@index([userId])
   @@index([status])
-  @@index([createdAt])
+  @@index([createdAt(sort: Desc)])
+  @@index([exerciseType])
 }

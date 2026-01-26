@@ -161,6 +161,7 @@ function UploadPageContent() {
   };
 
   const processVideo = async (videoUpload: VideoUpload) => {
+    let analysisId: string | null = null;
     try {
       // Get fresh session to ensure we have the user ID if logged in
       const session = await getSession();
@@ -170,24 +171,73 @@ function UploadPageContent() {
       console.log("🔍 Session data:", session);
       console.log("🔍 User ID:", userId);
 
-      // 1. Upload
+      // 1. Upload - This creates the analysis record in the backend with ID = pid
       updateVideoStatus(videoUpload.id, { status: "processing", progress: 10 });
       const uploadResp = await ApiService.uploadVideo(videoUpload.file, userId);
       
       const pid = uploadResp.pid;
       setVideos(prev => prev.map(v => v.id === videoUpload.id ? { ...v, id: pid } : v));
+
+      // If user is logged in, the backend created a record with id=pid
+      if (userId) {
+        analysisId = pid;
+        console.log("✅ Using backend analysis record:", analysisId);
+      }
+      
+      // Update analysis status to processing
+      if (analysisId) {
+        try {
+          await ApiService.updateAnalysis(analysisId, { status: "processing", progress: 0.1 });
+        } catch (error) {
+          console.error("⚠️ Failed to update analysis status:", error);
+        }
+      }
       
       // 2. Start Processing using selected exerciseType
       updateVideoStatus(pid, { status: "processing", progress: 30 });
-      await ApiService.startProcessing(pid, exerciseType); 
+      await ApiService.startProcessing(pid, exerciseType);
+      
+      if (analysisId) {
+        try {
+          await ApiService.updateAnalysis(analysisId, { status: "processing", progress: 0.3 });
+        } catch (error) {
+          console.error("⚠️ Failed to update analysis status:", error);
+        }
+      }
       
       // 3. Poll for Status
       updateVideoStatus(pid, { status: "processing", progress: 50 });
       await ApiService.pollUntilComplete(pid);
       
+      if (analysisId) {
+        try {
+          await ApiService.updateAnalysis(analysisId, { status: "processing", progress: 0.5 });
+        } catch (error) {
+          console.error("⚠️ Failed to update analysis status:", error);
+        }
+      }
+      
       // 4. Get Results
       updateVideoStatus(pid, { status: "processing", progress: 90 });
       const results = await ApiService.getResponseJson(pid);
+      
+      // 5. Save results to database
+      if (analysisId) {
+        try {
+          await ApiService.updateAnalysis(analysisId, {
+            status: "completed",
+            progress: 1.0,
+            overallScore: results.overall_score,
+            maxScore: results.max_score,
+            percentage: results.percentage,
+            resultsJson: results,
+            completedAt: new Date().toISOString()
+          });
+          console.log("✅ Saved analysis results to database");
+        } catch (error) {
+          console.error("⚠️ Failed to save analysis results:", error);
+        }
+      }
       
       updateVideoStatus(pid, { status: "completed", progress: 100 });
       setVideos(prev => prev.map(v => v.id === pid ? { ...v, analysisResults: results } : v));
@@ -204,6 +254,19 @@ function UploadPageContent() {
     } catch (error: any) {
       console.error("Processing failed:", error);
       const targetId = videos.find(v => v.file === videoUpload.file)?.id || videoUpload.id;
+      
+      // Update analysis status to failed
+      if (analysisId) {
+        try {
+          await ApiService.updateAnalysis(analysisId, {
+            status: "failed",
+            errorMessage: error.message || "Processing failed"
+          });
+        } catch (dbError) {
+          console.error("⚠️ Failed to update analysis status to failed:", dbError);
+        }
+      }
+      
       updateVideoStatus(targetId, { 
         status: "failed", 
         progress: 0, 

@@ -65,20 +65,55 @@ export interface AnalysisHistoryItem {
 }
 
 export class ApiService {
-  static async getHistory(userId?: string): Promise<any[]> {
-    const headers: HeadersInit = {};
-    if (userId) {
-      headers['X-User-Id'] = userId;
-      console.log("✅ History - Adding X-User-Id header:", userId);
-    } else {
-      console.log("❌ History - No userId provided");
+  static async getHistory(userId?: string, page: number = 1, limit: number = 20): Promise<{ data: any[]; pagination: any }> {
+    // Use the Next.js API route that directly queries the database
+    // Authentication is handled server-side via the session token
+    const response = await fetch(`/api/history?page=${page}&limit=${limit}`, {
+      credentials: 'include' // Include cookies for session authentication
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Failed to fetch history" }));
+      throw new Error(error.error || "Failed to fetch history");
     }
-
-    const response = await fetch(`${API_BASE_URL}/history`, { headers });
-    if (!response.ok) throw new Error("Failed to fetch history");
     const data = await response.json();
     console.log("📦 History - Received data:", data);
     return data;
+  }
+
+  static async createAnalysis(fileName: string, exerciseType: string, status: string = "pending"): Promise<any> {
+    const response = await fetch(`/api/analysis`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: 'include',
+      body: JSON.stringify({ fileName, exerciseType, status }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Failed to create analysis" }));
+      throw new Error(error.error || "Failed to create analysis");
+    }
+
+    return response.json();
+  }
+
+  static async updateAnalysis(analysisId: string, updates: any): Promise<any> {
+    const response = await fetch(`/api/analysis/${analysisId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: 'include',
+      body: JSON.stringify(updates),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Failed to update analysis" }));
+      throw new Error(error.error || "Failed to update analysis");
+    }
+
+    return response.json();
   }
 
   static async uploadVideo(file: File, userId?: string): Promise<UploadResponse> {

@@ -9,7 +9,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./Backend/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+      - ./Backend/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gymnastics -d gymnastics_db"]
       interval: 5s
@@ -48,7 +48,7 @@ services:
       backend:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "--interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1"]
+      test: ["CMD-SHELL", "--interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget --quiet --tries=1 --spider http://localhost/api/health || exit 1"]
       interval: 10s
       timeout: 10s
 

@@ -5,7 +5,7 @@ interface HistoryCardProps {
   id: string;
   date: string;
   exerciseType: string;
-  score: number;
+  score: number | null;
   thumbnailUrl?: string;
   status: "completed" | "processing" | "failed" | "pending";
 }
@@ -58,7 +58,7 @@ export function HistoryCard({
           </div>
           
           {/* Score Overlay */}
-          {status === "completed" && (
+          {status === "completed" && score !== null && (
             <div className="absolute bottom-3 left-3 bg-background border-2 border-accent px-3 py-1 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-accent" />
               <span className="font-heading font-bold text-accent">{score.toFixed(1)}</span>

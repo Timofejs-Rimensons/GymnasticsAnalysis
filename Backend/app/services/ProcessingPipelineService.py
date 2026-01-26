@@ -260,7 +260,7 @@ class ProcessingPipelineService:
         # Save results to database if analysis_id is provided
         if analysis_id:
             try:
-                from database import get_database
+                from database_simple import get_database
 
                 # Read the generated JSON results
                 with open(output_json_path, 'r') as f:
