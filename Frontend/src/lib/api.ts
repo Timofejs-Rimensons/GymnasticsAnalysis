@@ -16,12 +16,19 @@ export interface ProcessRequest {
   exercise_name: string;
 }
 
+export interface Tip {
+  met: boolean;
+  criterion: string;
+  tip: string;
+}
+
 export interface Pose {
   name: string;
   score: number;
   max_score: number;
   description: string;
   improvement_needed: boolean;
+  tips?: Tip[];
 }
 
 export interface CategoryScore {
