@@ -48,18 +48,29 @@ export interface AnalysisHistoryItem {
 }
 
 export class ApiService {
-  static async getHistory(): Promise<any[]> {
-    const response = await fetch(`${API_BASE_URL}/history`);
+  static async getHistory(userId?: string): Promise<any[]> {
+    const headers: HeadersInit = {};
+    if (userId) {
+      headers['X-User-Id'] = userId;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/history`, { headers });
     if (!response.ok) throw new Error("Failed to fetch history");
     return response.json();
   }
 
-  static async uploadVideo(file: File): Promise<UploadResponse> {
+  static async uploadVideo(file: File, userId?: string): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append("video", file);
 
+    const headers: HeadersInit = {};
+    if (userId) {
+      headers['X-User-Id'] = userId;
+    }
+
     const response = await fetch(`${API_BASE_URL}/upload`, {
       method: "POST",
+      headers,
       body: formData,
     });
 

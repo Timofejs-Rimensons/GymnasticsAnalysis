@@ -5,8 +5,10 @@ import { HistoryCard } from "@/components/HistoryCard";
 import { Filter, Search, SortAsc, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { ApiService } from "@/lib/api";
+import { useSession } from "next-auth/react";
 
 export default function HistoryPage() {
+  const { data: session } = useSession();
   const [filter, setFilter] = useState("all");
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -14,14 +16,15 @@ export default function HistoryPage() {
   useEffect(() => {
     async function loadHistory() {
       try {
-        const data = await ApiService.getHistory();
+        const userId = session?.user?.id;
+        const data = await ApiService.getHistory(userId);
         const mapped = data.map((item: any) => ({
             id: item.id,
-            date: new Date(item.created_at).toLocaleDateString(),
+            date: item.created_at ? new Date(item.created_at).toLocaleDateString() : "Unknown",
             exerciseType: item.exercise_type || "Unknown",
             score: item.score || 0,
             status: item.status,
-            thumbnailUrl: null 
+            thumbnailUrl: null
         }));
         setHistory(mapped);
       } catch (err) {
@@ -31,7 +34,7 @@ export default function HistoryPage() {
       }
     }
     loadHistory();
-  }, []);
+  }, [session]);
 
   return (
     <div className="min-h-screen bg-background">
