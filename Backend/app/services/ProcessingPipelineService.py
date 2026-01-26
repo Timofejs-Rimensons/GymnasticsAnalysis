@@ -193,6 +193,11 @@ class ProcessingPipelineService:
         all_scores = {label: [] for label in pose_labels}
         analytics_per_frame = []
 
+        # For handstand, we also track HandPlacement separately
+        hand_placement_analytics = []
+        if exercise_name == 'handstand' and 'HandPlacement' not in all_scores:
+            all_scores['HandPlacement'] = []
+
         for i, pose_name in enumerate(processed_labels):
             analytics_result = None
             if i < len(world_pose_tensor):
@@ -207,6 +212,14 @@ class ProcessingPipelineService:
 
                 if analytics_result and 'score' in analytics_result:
                     all_scores[pose_name].append(analytics_result['score'])
+
+                # For handstand frames, also analyze hand placement separately
+                if exercise_name == 'handstand' and pose_name == 'Handstand':
+                    hand_placement_result = analytics_service.analyze_pose(current_world_pose, 'HandPlacement')
+                    if hand_placement_result and 'score' in hand_placement_result:
+                        all_scores['HandPlacement'].append(hand_placement_result['score'])
+                        hand_placement_analytics.append(hand_placement_result)
+
             analytics_per_frame.append(analytics_result)
 
         # 6. Aggregate analytics
@@ -215,6 +228,10 @@ class ProcessingPipelineService:
             pose_specific_analytics = [res for i, res in enumerate(analytics_per_frame) if processed_labels[i] == pose_name and res]
             if pose_specific_analytics:
                 analytics_per_pose[pose_name] = analytics_service.aggregate_frame_feedback(pose_specific_analytics)
+
+        # Aggregate HandPlacement analytics for handstand
+        if exercise_name == 'handstand' and hand_placement_analytics:
+            analytics_per_pose['HandPlacement'] = analytics_service.aggregate_frame_feedback(hand_placement_analytics)
 
         self._update_status(status_json_path, "saving", 0.9)
 

@@ -40,14 +40,23 @@
                         "max": 20,
                         "tip": "Engage your core to maintain a straight line from hands to feet"
                     },
+                    "shoulder_arm_alignment": {
+                        "max": 0.2,
+                        "tip": "Push through your shoulders to create a vertical line"
+                    }
+                }
+            },
+            "HandPlacement": {
+                "criteria": {
                     "hand_width_ratio": {
                         "min": 0.8,
                         "max": 1.5,
                         "tip": "Place your hands shoulder-width apart"
                     },
-                    "shoulder_arm_alignment": {
-                        "max": 0.2,
-                        "tip": "Push through your shoulders to create a vertical line"
+                    "hand_forward_distance": {
+                        "min": 0.3,
+                        "max": 0.7,
+                        "tip": "Position your hands at the optimal distance forward from your shoulders for better balance"
                     }
                 }
             },
@@ -122,7 +131,7 @@
     "models": {
         "handstand": {
             "model_path": "./model_weights/handstand_pyskl_model.pt",
-            "poses": ["Starting", "Swing", "Handstand", "Landing"]
+            "poses": ["Starting", "Swing", "Handstand", "Landing", "HandPlacement"]
         },
         "straddle_jump": {
             "model_path": "./model_weights/straddle_jump_pyskl_model.pt",
