@@ -1,73 +1,132 @@
 {
     "improvement_needed_treshold": 0.2,
     "pose_criteria": {
-        "Starting": {
-            "criteria": {
-                "arms_vertical_angle": {
-                    "min": 160,
-                    "max": 180,
-                    "tip": "Raise your arms higher overhead"
-                },
-                "back_leg_knee_angle": {
-                    "min": 160,
-                    "max": 180,
-                    "tip": "Straighten your back leg completely"
-                },
-                "step_distance": {
-                    "min": 0.6,
-                    "max": 1.4,
-                    "tip": "Adjust your step size - take a bigger step for more momentum"
+        "handstand": {
+            "Starting": {
+                "criteria": {
+                    "arms_vertical_angle": {
+                        "min": 160,
+                        "max": 180,
+                        "tip": "Raise your arms higher overhead"
+                    },
+                    "back_leg_knee_angle": {
+                        "min": 160,
+                        "max": 180,
+                        "tip": "Straighten your back leg completely"
+                    },
+                    "step_distance": {
+                        "min": 0.6,
+                        "max": 1.4,
+                        "tip": "Adjust your step size - take a bigger step for more momentum"
+                    }
+                }
+            },
+            "Swing": {
+                "criteria": {
+                    "back_leg_knee_angle": {
+                        "min": 160,
+                        "max": 180,
+                        "tip": "Keep your back leg straight throughout the swing"
+                    }
+                }
+            },
+            "Handstand": {
+                "criteria": {
+                    "leg_alignment_deviation": {
+                        "max": 0.2,
+                        "tip": "Focus on stacking your ankles over your hips and shoulders"
+                    },
+                    "back_straightness": {
+                        "max": 20,
+                        "tip": "Engage your core to maintain a straight line from hands to feet"
+                    },
+                    "hand_width_ratio": {
+                        "min": 0.8,
+                        "max": 1.5,
+                        "tip": "Place your hands shoulder-width apart"
+                    },
+                    "shoulder_arm_alignment": {
+                        "max": 0.2,
+                        "tip": "Push through your shoulders to create a vertical line"
+                    }
+                }
+            },
+            "Landing": {
+                "criteria": {
+                    "knee_flexion": {
+                        "min": 90,
+                        "max": 140,
+                        "tip": "Bend your knees to absorb the landing impact"
+                    }
                 }
             }
         },
-        "Swing": {
-            "criteria": {
-                "back_leg_knee_angle": {
-                    "min": 160,
-                    "max": 180,
-                    "tip": "Keep your back leg straight throughout the swing"
+        "straddle_jump": {
+            "Run-up": {
+                "criteria": {
+                    "torso_upright": {
+                        "min": 170,
+                        "max": 190,
+                        "tip": "Keep your torso upright during the run-up."
+                    }
                 }
-            }
-        },
-        "Handstand": {
-            "criteria": {
-                "leg_alignment_deviation": {
-                    "max": 0.2,
-                    "tip": "Focus on stacking your ankles over your hips and shoulders"
-                },
-                "back_straightness": {
-                    "max": 20,
-                    "tip": "Engage your core to maintain a straight line from hands to feet"
-                },
-                "hand_width_ratio": {
-                    "min": 0.8,
-                    "max": 1.5,
-                    "tip": "Place your hands shoulder-width apart"
-                },
-                "shoulder_arm_alignment": {
-                    "max": 0.2,
-                    "tip": "Push through your shoulders to create a vertical line"
+            },
+            "Take-off": {
+                "criteria": {
+                    "feet_together": {
+                        "max": 0.2,
+                        "tip": "Keep both feet together on the springboard."
+                    },
+                    "torso_upright": {
+                        "min": 170,
+                        "max": 190,
+                        "tip": "Keep your torso upright during take-off."
+                    }
                 }
-            }
-        },
-        "Landing": {
-            "criteria": {
-                "knee_flexion": {
-                    "min": 90,
-                    "max": 140,
-                    "tip": "Bend your knees to absorb the landing impact"
+            },
+            "Flight1": {
+                "criteria": {
+                    "body_extended": {
+                        "min": 0.3,
+                        "tip": "Fully extend your body, feet higher than hips."
+                    },
+                    "hand_placement": {
+                        "max": 0.1,
+                        "tip": "Place your hands closer to the edge of the box."
+                    }
+                }
+            },
+            "Flight2": {
+                "criteria": {
+                    "legs_spread": {
+                        "min": 160,
+                        "tip": "Spread your legs straight and wide."
+                    },
+                    "torso_upright": {
+                        "min": 170,
+                        "max": 190,
+                        "tip": "Keep your torso upright and balanced."
+                    }
+                }
+            },
+            "Landing": {
+                "criteria": {
+                    "stable_landing": {
+                        "max": 0.3,
+                        "tip": "Land with feet together for stability."
+                    }
                 }
             }
         }
     },
     "models": {
         "handstand": {
-            "model_path": "./model_weights/handstand_pyskl_model.pth",
+            "model_path": "./model_weights/handstand_pyskl_model.pt",
             "poses": ["Starting", "Swing", "Handstand", "Landing"]
         },
-        "leap": {
-            "model_path": "./model_weights/leap_pyskl_model.pth",
-            "poses": ["Runup", "Takeoff", "Handplacement", "Flight Down", "Landing"]
+        "straddle_jump": {
+            "model_path": "./model_weights/straddle_jump_pyskl_model.pt",
+            "poses": ["Run-up", "Take-off", "Flight1", "Flight2", "Landing"]
         }
     }
 }
