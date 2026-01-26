@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, ChevronDown, AlertCircle } from "lucide-react";
+import { Download, ChevronDown, AlertCircle, Info } from "lucide-react";
 import {
   PieChart,
   Pie,
@@ -11,6 +11,12 @@ import {
 } from "recharts";
 import { ApiService, AnalysisResult, StatusResponse, Pose } from "@/lib/api";
 import { formatFileSize } from "@/lib/utils";
+import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface VideoUpload {
   id: string;
@@ -114,6 +120,7 @@ export function ResultsDisplay({
 
   return (
     <section className="border-2 border-border p-6 bg-surface">
+      <TooltipProvider>
       <div className="flex items-center gap-3 mb-6">
         <div className="w-3 h-3 bg-accent" />
         <h2
@@ -222,9 +229,45 @@ export function ResultsDisplay({
                     className="p-4 border-b-2 border-border last:border-b-0"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-bold uppercase text-sm tracking-wide">
-                        {pose.name}
-                      </h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold uppercase text-sm tracking-wide">
+                          {pose.name}
+                        </h4>
+                        {pose.tips && pose.tips.length > 0 && (
+                          <UITooltip>
+                            <TooltipTrigger asChild>
+                              <button className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-accent bg-accent/10 text-accent hover:bg-accent hover:text-accent-foreground transition-colors">
+                                <Info className="w-3 h-3" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <div className="space-y-2">
+                                <p className="font-bold text-xs uppercase tracking-wider mb-2">
+                                  Improvement Tips
+                                </p>
+                                {pose.tips.map((tip, tipIndex) => (
+                                  <div
+                                    key={tipIndex}
+                                    className={`text-xs ${
+                                      !tip.met
+                                        ? "text-accent font-semibold"
+                                        : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    <span className="inline-block mr-1">
+                                      {!tip.met ? "⚠" : "✓"}
+                                    </span>
+                                    <span className="font-mono text-[10px] uppercase tracking-wide">
+                                      {tip.criterion}:
+                                    </span>{" "}
+                                    {tip.tip}
+                                  </div>
+                                ))}
+                              </div>
+                            </TooltipContent>
+                          </UITooltip>
+                        )}
+                      </div>
                       <span
                         className="font-mono text-sm font-bold"
                         style={{ color: pose.color }}
@@ -360,6 +403,7 @@ export function ResultsDisplay({
           </span>
         </button>
       </div>
+      </TooltipProvider>
     </section>
   );
 }
