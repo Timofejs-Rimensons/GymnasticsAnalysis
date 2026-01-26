@@ -268,12 +268,38 @@ export function ResultsDisplay({
                           </UITooltip>
                         )}
                       </div>
-                      <span
-                        className="font-mono text-sm font-bold"
-                        style={{ color: pose.color }}
-                      >
-                        {pose.score}/{pose.max_score}
-                      </span>
+                    </div>
+  
+                    {/* Score with Tooltip */}
+                    <div className="flex justify-end mb-2">
+                      <UITooltip>
+                        <TooltipTrigger asChild>
+                          <span
+                            className="font-mono text-sm font-bold cursor-help"
+                            style={{ color: pose.color }}
+                          >
+                            {pose.score}/{pose.max_score}
+                          </span>
+                        </TooltipTrigger>
+                        {pose.errors && pose.errors.length > 0 && (
+                          <TooltipContent className="max-w-xs">
+                            <div className="space-y-2">
+                              <p className="font-bold text-xs uppercase tracking-wider mb-2">
+                                Improvements Needed
+                              </p>
+                              {pose.errors.map((error, errorIndex) => (
+                                <div key={errorIndex} className="text-xs text-accent font-semibold">
+                                  <span className="inline-block mr-1">⚠</span>
+                                  <span className="font-mono text-[10px] uppercase tracking-wide">
+                                    {error.criterion}:
+                                  </span>{' '}
+                                  {error.improvement}
+                                </div>
+                              ))}
+                            </div>
+                          </TooltipContent>
+                        )}
+                      </UITooltip>
                     </div>
 
                     {/* Progress Bar */}

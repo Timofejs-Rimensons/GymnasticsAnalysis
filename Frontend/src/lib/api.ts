@@ -22,6 +22,12 @@ export interface Tip {
   tip: string;
 }
 
+interface Error {
+  criterion: string;
+  improvement: string;
+  frequency: number;
+}
+
 export interface Pose {
   name: string;
   score: number;
@@ -29,6 +35,7 @@ export interface Pose {
   description: string;
   improvement_needed: boolean;
   tips?: Tip[];
+  errors?: Error[];
 }
 
 export interface CategoryScore {
