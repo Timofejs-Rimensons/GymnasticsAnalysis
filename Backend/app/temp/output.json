@@ -1,0 +1,88 @@
+{
+    "overall_score": 58,
+    "max_score": 100,
+    "percentage": 57.52854567307691,
+    "categories": [
+        {
+            "name": "Poses",
+            "poses": [
+                {
+                    "name": "Starting",
+                    "score": 35,
+                    "max_score": 100,
+                    "description": "Analysis of Starting phase",
+                    "improvement_needed": false,
+                    "errors": [
+                        {
+                            "criterion": "arms_vertical_angle",
+                            "improvement": "Raise your arms higher overhead",
+                            "frequency": 1.0
+                        },
+                        {
+                            "criterion": "back_leg_straight",
+                            "improvement": "Straighten your back leg completely",
+                            "frequency": 0.9705882352941176
+                        },
+                        {
+                            "criterion": "step_distance",
+                            "improvement": "Adjust your step size - take a bigger step for more momentum",
+                            "frequency": 0.10294117647058823
+                        }
+                    ]
+                },
+                {
+                    "name": "Swing",
+                    "score": 58,
+                    "max_score": 100,
+                    "description": "Analysis of Swing phase",
+                    "improvement_needed": false,
+                    "errors": [
+                        {
+                            "criterion": "back_leg_straight",
+                            "improvement": "Keep your back leg straight throughout the swing",
+                            "frequency": 0.8461538461538461
+                        }
+                    ]
+                },
+                {
+                    "name": "Handstand",
+                    "score": 67,
+                    "max_score": 100,
+                    "description": "Analysis of Handstand phase",
+                    "improvement_needed": false,
+                    "errors": [
+                        {
+                            "criterion": "hand_placement",
+                            "improvement": "Place your hands shoulder-width apart",
+                            "frequency": 0.9375
+                        },
+                        {
+                            "criterion": "back_straightness",
+                            "improvement": "Engage your core to maintain a straight line from hands to feet",
+                            "frequency": 0.421875
+                        },
+                        {
+                            "criterion": "leg_alignment",
+                            "improvement": "Focus on stacking your ankles over your hips and shoulders",
+                            "frequency": 0.265625
+                        }
+                    ]
+                },
+                {
+                    "name": "Landing",
+                    "score": 70,
+                    "max_score": 100,
+                    "description": "Analysis of Landing phase",
+                    "improvement_needed": false,
+                    "errors": [
+                        {
+                            "criterion": "knee_flexion",
+                            "improvement": "Bend your knees to absorb the landing impact",
+                            "frequency": 1.0
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
