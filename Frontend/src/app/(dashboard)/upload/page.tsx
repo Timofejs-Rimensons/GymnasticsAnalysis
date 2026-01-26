@@ -166,6 +166,10 @@ function UploadPageContent() {
       const session = await getSession();
       const userId = session?.user?.id;
 
+      // Debug logging
+      console.log("🔍 Session data:", session);
+      console.log("🔍 User ID:", userId);
+
       // 1. Upload
       updateVideoStatus(videoUpload.id, { status: "processing", progress: 10 });
       const uploadResp = await ApiService.uploadVideo(videoUpload.file, userId);

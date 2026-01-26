@@ -69,9 +69,15 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 elif deviation > 15: # Example threshold for 'mid'
                     arm_bone_score = 0.5
                 
+                # Generate specific tip based on actual measurement
+                deviation_degrees = min(abs(left_arm_angle - min_angle), abs(left_arm_angle - max_angle))
+                specific_tip = f"Your arms are {deviation_degrees:.0f}° from vertical. Raise them higher overhead to achieve the ideal {min_angle}-{max_angle}° range."
+                
                 feedback['errors'].append({
                     'criterion': 'arms_vertical_angle',
-                    'improvement': threshold.get('tip', 'Raise your arms higher.'),
+                    'improvement': specific_tip,
+                    'measurement': left_arm_angle,
+                    'ideal_range': f"{min_angle}-{max_angle}°"
                 })
                 feedback['score'] -= 0.3 # Fixed penalty
 
@@ -102,9 +108,15 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 elif deviation > 15: # Example threshold for 'mid'
                     leg_bone_score = 0.5
 
+                # Generate specific tip based on actual measurement
+                deviation_degrees = max_angle - back_knee_angle
+                specific_tip = f"Your back leg is bent at {back_knee_angle:.0f}° (should be {max_angle}° for straight). Straighten your back leg completely to improve your starting position."
+                
                 feedback['errors'].append({
                     'criterion': 'back_leg_straight',
-                    'improvement': threshold.get('tip', 'Straighten your back leg.'),
+                    'improvement': specific_tip,
+                    'measurement': back_knee_angle,
+                    'ideal_range': f"{min_angle}-{max_angle}°"
                 })
                 feedback['score'] -= 0.35 # Fixed penalty
 
@@ -134,9 +146,17 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 elif deviation > 0.2: # Example threshold for 'mid'
                     step_bone_score = 0.5
 
+                # Generate specific tip based on actual measurement
+                if step_distance < min_dist:
+                    specific_tip = f"Your step is too short ({step_distance:.2f}m). Take a bigger step ({min_dist:.2f}-{max_dist:.2f}m range) for more momentum."
+                else:
+                    specific_tip = f"Your step is too long ({step_distance:.2f}m). Take a shorter step ({min_dist:.2f}-{max_dist:.2f}m range) for better control."
+                
                 feedback['errors'].append({
                     'criterion': 'step_distance',
-                    'improvement': threshold.get('tip', 'Adjust your step distance.'),
+                    'improvement': specific_tip,
+                    'measurement': step_distance,
+                    'ideal_range': f"{min_dist:.2f}-{max_dist:.2f}m"
                 })
                 feedback['score'] -= 0.1 # Fixed penalty
             
@@ -180,9 +200,15 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 elif deviation > 15: # Example threshold for 'mid'
                     leg_bone_score = 0.5
 
+                # Generate specific tip based on actual measurement
+                deviation_degrees = max_angle - back_knee_angle
+                specific_tip = f"Your back leg is bent at {back_knee_angle:.0f}° during swing (should be {max_angle}° for straight). Keep your back leg straight throughout the swing phase."
+                
                 feedback['errors'].append({
                     'criterion': 'back_leg_straight',
-                    'improvement': threshold.get('tip', 'Keep back leg straight.'),
+                    'improvement': specific_tip,
+                    'measurement': back_knee_angle,
+                    'ideal_range': f"{min_angle}-{max_angle}°"
                 })
                 feedback['score'] -= 0.5 # Fixed penalty
 
@@ -226,7 +252,15 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 elif leg_alignment_deviation > 0.2: # Example threshold for 'mid'
                     alignment_bone_score = 0.5
 
-                feedback['errors'].append({'criterion': 'leg_alignment', 'improvement': criteria['leg_alignment_deviation'].get('tip')})
+                # Generate specific tip based on actual measurement
+                specific_tip = f"Your body alignment deviation is {leg_alignment_deviation:.2f}m (should be <{max_deviation:.2f}m). Focus on stacking your ankles over your hips and shoulders for better balance."
+                
+                feedback['errors'].append({
+                    'criterion': 'leg_alignment',
+                    'improvement': specific_tip,
+                    'measurement': leg_alignment_deviation,
+                    'ideal_range': f"<{max_deviation:.2f}m"
+                })
                 feedback['score'] -= 0.3 # Fixed penalty
             
             # Affects entire body alignment
@@ -257,7 +291,15 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 elif back_straightness > 10: # Example threshold for 'mid'
                     back_bone_score = 0.5
 
-                feedback['errors'].append({'criterion': 'back_straightness', 'improvement': criteria['back_straightness'].get('tip')})
+                # Generate specific tip based on actual measurement
+                specific_tip = f"Your back is bent at {back_straightness:.0f}° from straight (should be <{max_deviation:.0f}°). Engage your core to maintain a straight line from hands to feet."
+                
+                feedback['errors'].append({
+                    'criterion': 'back_straightness',
+                    'improvement': specific_tip,
+                    'measurement': back_straightness,
+                    'ideal_range': f"<{max_deviation:.0f}°"
+                })
                 feedback['score'] -= 0.25 # Fixed penalty
             
             # Affects torso and potentially legs if severe
@@ -287,7 +329,15 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 elif shoulder_arm_alignment > 0.1: # Example threshold for 'mid'
                     arm_alignment_bone_score = 0.5
 
-                feedback['errors'].append({'criterion': 'shoulder_position', 'improvement': criteria['shoulder_arm_alignment'].get('tip')})
+                # Generate specific tip based on actual measurement
+                specific_tip = f"Your shoulder-arm alignment deviation is {shoulder_arm_alignment:.2f}m (should be <{max_deviation:.2f}m). Push through your shoulders to create a vertical line from wrists to shoulders."
+                
+                feedback['errors'].append({
+                    'criterion': 'shoulder_position',
+                    'improvement': specific_tip,
+                    'measurement': shoulder_arm_alignment,
+                    'ideal_range': f"<{max_deviation:.2f}m"
+                })
                 feedback['score'] -= 0.2 # Fixed penalty
 
             feedback['bone_scores'] = self._calculate_bone_scores_from_criterion(
@@ -344,7 +394,20 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 elif deviation > 0.15: # Example threshold for 'mid'
                     hand_bone_score = 0.5
 
-                feedback['errors'].append({'criterion': 'hand_width', 'improvement': criteria['hand_width_ratio'].get('tip')})
+                # Generate specific tip based on actual measurement
+                if hand_width_ratio < min_ratio:
+                    percentage_short = ((min_ratio - hand_width_ratio) / min_ratio) * 100
+                    specific_tip = f"Your hands are {percentage_short:.0f}% too close together. Move them {((min_ratio - hand_width_ratio) * shoulder_width * 100):.0f}cm apart for better balance."
+                else:
+                    percentage_over = ((hand_width_ratio - max_ratio) / max_ratio) * 100
+                    specific_tip = f"Your hands are {percentage_over:.0f}% too far apart. Bring them {((hand_width_ratio - max_ratio) * shoulder_width * 100):.0f}cm closer together."
+                
+                feedback['errors'].append({
+                    'criterion': 'hand_width',
+                    'improvement': specific_tip,
+                    'measurement': hand_width_ratio,
+                    'ideal_range': f"{min_ratio}-{max_ratio}"
+                })
                 feedback['score'] -= 0.4 # Fixed penalty
 
             # Affects forearm segments
@@ -381,7 +444,20 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 elif deviation > 0.15: # Example threshold for 'mid'
                     placement_bone_score = 0.5
 
-                feedback['errors'].append({'criterion': 'hand_forward_distance', 'improvement': criteria['hand_forward_distance'].get('tip')})
+                # Generate specific tip based on actual measurement
+                if hand_forward_ratio < min_ratio:
+                    percentage_short = ((min_ratio - hand_forward_ratio) / min_ratio) * 100
+                    specific_tip = f"Your hands are {percentage_short:.0f}% too close to your shoulders. Move them {((min_ratio - hand_forward_ratio) * shoulder_width * 100):.0f}cm forward for better balance."
+                else:
+                    percentage_over = ((hand_forward_ratio - max_ratio) / max_ratio) * 100
+                    specific_tip = f"Your hands are {percentage_over:.0f}% too far forward. Bring them {((hand_forward_ratio - max_ratio) * shoulder_width * 100):.0f}cm closer to your shoulders."
+                
+                feedback['errors'].append({
+                    'criterion': 'hand_forward_distance',
+                    'improvement': specific_tip,
+                    'measurement': hand_forward_ratio,
+                    'ideal_range': f"{min_ratio}-{max_ratio}"
+                })
                 feedback['score'] -= 0.6 # Fixed penalty
 
             # Affects all arm segments
@@ -428,7 +504,18 @@ class HandstandAnalyticsService(BaseAnalyticsService):
                 elif deviation > 20: # Example threshold for 'mid'
                     knee_bone_score = 0.5
 
-                feedback['errors'].append({'criterion': 'knee_flexion', 'improvement': threshold.get('tip')})
+                # Generate specific tip based on actual measurement
+                if knee_angle < min_angle:
+                    specific_tip = f"Your knees are only bent at {knee_angle:.0f}° (should be {min_angle}-{max_angle}°). Bend your knees more to absorb the landing impact properly."
+                else:
+                    specific_tip = f"Your knees are bent at {knee_angle:.0f}° (should be {min_angle}-{max_angle}°). Don't over-bend your knees during landing."
+                
+                feedback['errors'].append({
+                    'criterion': 'knee_flexion',
+                    'improvement': specific_tip,
+                    'measurement': knee_angle,
+                    'ideal_range': f"{min_angle}-{max_angle}°"
+                })
                 feedback['score'] -= 0.3 # Fixed penalty
 
             feedback['bone_scores'] = self._calculate_bone_scores_from_criterion(

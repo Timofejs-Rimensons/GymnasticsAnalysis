@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
   try {
@@ -13,30 +11,26 @@ export async function POST(req: Request) {
       );
     }
 
-    const exists = await prisma.user.findUnique({
-      where: {
-        email,
+    // Call backend API for registration
+    const backendUrl = process.env.BACKEND_URL || 'http://backend:8000/api';
+    const response = await fetch(`${backendUrl}/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ name, email, password }),
     });
 
-    if (exists) {
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: "Registration failed" }));
       return NextResponse.json(
-        { error: "User already exists" },
-        { status: 400 }
+        { error: errorData.error || "Registration failed" },
+        { status: response.status }
       );
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-      },
-    });
-
-    return NextResponse.json(user);
+    const data = await response.json();
+    return NextResponse.json(data);
   } catch (error) {
     console.error("Registration error:", error);
     return NextResponse.json(

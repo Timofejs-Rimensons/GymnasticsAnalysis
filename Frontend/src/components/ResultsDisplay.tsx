@@ -69,25 +69,36 @@ export function ResultsDisplay({
       )
     : [];
 
-  // Calculate totals
+  // Calculate totals - Normalize scores so all categories add up to 100 max
   const totalScore = resultsData?.overall_score || 0;
   const maxScore = resultsData?.max_score || 100;
+  
+  // Calculate total max score from all poses (each pose has max_score of 100)
+  const totalMaxScoreFromPoses = allPoses.reduce((sum, pose) => sum + pose.max_score, 0);
+  
+  // Normalize scores so all categories add up to 100 max
+  const normalizedPoses = allPoses.map(pose => ({
+    ...pose,
+    score: (pose.score / totalMaxScoreFromPoses) * maxScore,
+    max_score: (pose.max_score / totalMaxScoreFromPoses) * maxScore
+  }));
+  
   const roomForImprovement = Math.max(0, maxScore - totalScore);
 
-  // Prepare chart data - Use actual scores for proportional values
+  // Prepare chart data - Use normalized scores for proportional values
   const chartData = [
-    ...allPoses.map((pose) => ({
+    ...normalizedPoses.map((pose) => ({
       name: pose.name,
       value: pose.score,
-      actualScore: pose.score,
-      maxScore: pose.max_score,
+      actualScore: parseFloat(pose.score.toFixed(1)),
+      maxScore: parseFloat(pose.max_score.toFixed(1)),
       poseData: pose,
       color: pose.color,
     })),
     {
       name: "Room for Improvement",
       value: roomForImprovement,
-      actualScore: roomForImprovement,
+      actualScore: parseFloat(roomForImprovement.toFixed(1)),
       maxScore: maxScore,
       poseData: null,
       color: "#333333",
@@ -207,14 +218,14 @@ export function ResultsDisplay({
                 className="text-5xl font-black text-accent"
                 style={{ fontFamily: "'Archivo Black', sans-serif" }}
               >
-                {resultsData.overall_score}
+                {totalScore.toFixed(1)}
               </span>
               <span className="text-2xl text-muted">
-                / {resultsData.max_score}
+                / {maxScore.toFixed(1)}
               </span>
             </div>
             <div className="text-xl font-bold mt-2">
-              {resultsData.percentage.toFixed(1)}%
+              {((totalScore / maxScore) * 100).toFixed(1)}%
             </div>
           </div>
 
@@ -224,10 +235,9 @@ export function ResultsDisplay({
               {/* Pose Cards */}
               <div className="lg:border-r-2 lg:border-border">
                 {allPoses.map((pose, index) => (
-                  <div
-                    key={index}
-                    className="p-4 border-b-2 border-border last:border-b-0"
-                  >
+                  <UITooltip key={index}>
+                    <TooltipTrigger asChild>
+                      <div className="p-4 border-b-2 border-border last:border-b-0 cursor-help">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <h4 className="font-bold uppercase text-sm tracking-wide">
@@ -270,36 +280,14 @@ export function ResultsDisplay({
                       </div>
                     </div>
   
-                    {/* Score with Tooltip */}
+                    {/* Score */}
                     <div className="flex justify-end mb-2">
-                      <UITooltip>
-                        <TooltipTrigger asChild>
-                          <span
-                            className="font-mono text-sm font-bold cursor-help"
-                            style={{ color: pose.color }}
-                          >
-                            {pose.score}/{pose.max_score}
-                          </span>
-                        </TooltipTrigger>
-                        {pose.errors && pose.errors.length > 0 && (
-                          <TooltipContent className="max-w-xs">
-                            <div className="space-y-2">
-                              <p className="font-bold text-xs uppercase tracking-wider mb-2">
-                                Improvements Needed
-                              </p>
-                              {pose.errors.map((error, errorIndex) => (
-                                <div key={errorIndex} className="text-xs text-accent font-semibold">
-                                  <span className="inline-block mr-1">⚠</span>
-                                  <span className="font-mono text-[10px] uppercase tracking-wide">
-                                    {error.criterion}:
-                                  </span>{' '}
-                                  {error.improvement}
-                                </div>
-                              ))}
-                            </div>
-                          </TooltipContent>
-                        )}
-                      </UITooltip>
+                      <span
+                        className="font-mono text-sm font-bold"
+                        style={{ color: pose.color }}
+                      >
+                        {normalizedPoses.find(p => p.name === pose.name)?.score.toFixed(1) || pose.score.toFixed(1)}/{normalizedPoses.find(p => p.name === pose.name)?.max_score.toFixed(1) || pose.max_score.toFixed(1)}
+                      </span>
                     </div>
 
                     {/* Progress Bar */}
@@ -307,7 +295,7 @@ export function ResultsDisplay({
                       <div
                         className="h-full transition-all duration-300"
                         style={{
-                          width: `${(pose.score / pose.max_score) * 100}%`,
+                          width: `${(normalizedPoses.find(p => p.name === pose.name)?.score || pose.score) / (normalizedPoses.find(p => p.name === pose.name)?.max_score || pose.max_score) * 100}%`,
                           backgroundColor: pose.color,
                         }}
                       />
@@ -329,6 +317,37 @@ export function ResultsDisplay({
                       </div>
                     )}
                   </div>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      {pose.errors && pose.errors.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="font-bold text-xs uppercase tracking-wider mb-2">
+                            Improvements Needed
+                          </p>
+                          {pose.errors.map((error, errorIndex) => (
+                            <div key={errorIndex} className="text-xs text-accent font-semibold mb-2">
+                              <span className="inline-block mr-1">⚠</span>
+                              <span className="font-mono text-[10px] uppercase tracking-wide">
+                                {error.criterion}:
+                              </span>{' '}
+                              {error.improvement}
+                              {error.measurement !== undefined && (
+                                <div className="text-xs text-muted-foreground mt-1 ml-4">
+                                  <span className="font-mono text-[9px]">
+                                    Measurement: {error.measurement.toFixed(2)} (Ideal: {error.ideal_range})
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground">
+                          No improvements needed
+                        </div>
+                      )}
+                    </TooltipContent>
+                  </UITooltip>
                 ))}
               </div>
 

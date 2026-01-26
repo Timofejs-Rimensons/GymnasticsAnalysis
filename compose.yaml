@@ -1,10 +1,32 @@
 services:
+  database:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: gymnastics
+      POSTGRES_PASSWORD: gymnastics_password
+      POSTGRES_DB: gymnastics_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./Backend/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gymnastics -d gymnastics_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: ./Backend
     expose:
       - 8000
     volumes:
       - temp_data:/app/.temp
+    environment:
+      - DATABASE_URL=postgresql://gymnastics:gymnastics_password@database:5432/gymnastics_db
+    depends_on:
+      database:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8000' || exit 1"]
       interval: 10s
@@ -17,8 +39,14 @@ services:
     environment:
       - VITE_API_BASE_URL=/api
       - BACKEND_URL=http://backend:8000/api
+      - DATABASE_URL=postgresql://gymnastics:gymnastics_password@database:5432/gymnastics_db
+      - NEXTAUTH_URL=http://localhost:8080
+      - NEXTAUTH_SECRET=development-secret-key-123-change-me-in-production
     depends_on:
-      - backend
+      database:
+        condition: service_healthy
+      backend:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "--interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1"]
       interval: 10s
@@ -26,3 +54,4 @@ services:
 
 volumes:
   temp_data:
+  postgres_data:

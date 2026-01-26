@@ -102,7 +102,7 @@ class ProcessingPipelineService:
 
         return grouped_labels
 
-    def analyze_video(self, input_video_path: str, output_video_path: str, output_pdf_path: str, output_json_path: str, exercise_name: str, status_json_path: str):
+    def analyze_video(self, input_video_path: str, output_video_path: str, output_pdf_path: str, output_json_path: str, exercise_name: str, status_json_path: str, analysis_id: str = None):
         input_video_path = str(input_video_path)
         output_video_path = str(output_video_path)
         output_pdf_path = str(output_pdf_path)
@@ -256,3 +256,27 @@ class ProcessingPipelineService:
         save_visualized_video(output_video_path, frames_data, input_video_path, frame_annotations=frame_annotations)
 
         self._update_status(status_json_path, "completed", 1)
+
+        # Save results to database if analysis_id is provided
+        if analysis_id:
+            try:
+                from database import get_database
+
+                # Read the generated JSON results
+                with open(output_json_path, 'r') as f:
+                    results_json = json.load(f)
+
+                # Save to database
+                db = get_database()
+                db.save_analysis_results(
+                    analysis_id=analysis_id,
+                    overall_score=results_json['overall_score'],
+                    max_score=results_json['max_score'],
+                    percentage=results_json['percentage'],
+                    results_json=results_json
+                )
+                print(f"✓ Saved analysis results to database for {analysis_id}")
+            except Exception as e:
+                print(f"❌ Failed to save results to database: {e}")
+                import traceback
+                traceback.print_exc()

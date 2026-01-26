@@ -132,10 +132,17 @@ class LeapAnalyticsService(BaseAnalyticsService):
                 elif deviation > 10:
                     torso_bone_score = 0.5
 
+                # Generate specific tip based on actual measurement
+                if torso_angle < min_angle:
+                    specific_tip = f"Your torso is leaning forward at {torso_angle:.1f}° (should be {min_angle}-{max_angle}°). Lean back to maintain upright posture during run-up."
+                else:
+                    specific_tip = f"Your torso is leaning backward at {torso_angle:.1f}° (should be {min_angle}-{max_angle}°). Lean forward slightly to maintain upright posture during run-up."
+                
                 feedback['errors'].append({
                     'criterion': 'torso_upright',
-                    'improvement': threshold.get('tip', 'Keep your torso upright during the run-up.'),
-                    'measurement': f'{torso_angle:.1f}° (target: {min_angle}-{max_angle}°)',
+                    'improvement': specific_tip,
+                    'measurement': torso_angle,
+                    'ideal_range': f'{min_angle}-{max_angle}°',
                     'severity': 'high' if deviation > 20 else 'medium'
                 })
                 feedback['score'] -= 0.2
@@ -178,10 +185,15 @@ class LeapAnalyticsService(BaseAnalyticsService):
                 elif feet_distance > 0.3:
                     feet_bone_score = 0.5
 
+                # Generate specific tip based on actual measurement
+                distance_over = feet_distance - max_distance
+                specific_tip = f"Your feet are {feet_distance:.2f}m apart (should be ≤{max_distance}m). Bring them {distance_over:.2f}m closer together for a more powerful take-off."
+                
                 feedback['errors'].append({
                     'criterion': 'feet_together',
-                    'improvement': threshold.get('tip', 'Keep both feet together on the springboard.'),
-                    'measurement': f'{feet_distance:.3f}m apart (max: {max_distance}m)',
+                    'improvement': specific_tip,
+                    'measurement': feet_distance,
+                    'ideal_range': f'≤{max_distance}m',
                     'severity': 'high' if feet_distance > 0.4 else 'medium'
                 })
                 feedback['score'] -= 0.3
@@ -212,10 +224,17 @@ class LeapAnalyticsService(BaseAnalyticsService):
                 elif deviation > 10:
                     torso_bone_score = 0.5
 
+                # Generate specific tip based on actual measurement
+                if torso_angle < min_angle:
+                    specific_tip = f"Your torso is leaning forward at {torso_angle:.1f}° during take-off (should be {min_angle}-{max_angle}°). Lean back to maintain upright posture."
+                else:
+                    specific_tip = f"Your torso is leaning backward at {torso_angle:.1f}° during take-off (should be {min_angle}-{max_angle}°). Lean forward slightly to maintain upright posture."
+                
                 feedback['errors'].append({
                     'criterion': 'torso_upright',
-                    'improvement': threshold.get('tip', 'Keep your torso upright during take-off.'),
-                    'measurement': f'{torso_angle:.1f}° (target: {min_angle}-{max_angle}°)',
+                    'improvement': specific_tip,
+                    'measurement': torso_angle,
+                    'ideal_range': f'{min_angle}-{max_angle}°',
                     'severity': 'high' if deviation > 20 else 'medium'
                 })
                 feedback['score'] -= 0.2
@@ -258,10 +277,15 @@ class LeapAnalyticsService(BaseAnalyticsService):
                 elif extension < 0.2:
                     extension_bone_score = 0.5
 
+                # Generate specific tip based on actual measurement
+                extension_short = min_extension - extension
+                specific_tip = f"Your legs are only extended {extension:.2f}m (should be ≥{min_extension}m). Extend your body more to get your feet higher than your hips for better flight."
+                
                 feedback['errors'].append({
                     'criterion': 'body_extended',
-                    'improvement': threshold.get('tip', 'Fully extend your body, feet higher than hips.'),
-                    'measurement': f'{extension:.3f}m extension (min: {min_extension}m)',
+                    'improvement': specific_tip,
+                    'measurement': extension,
+                    'ideal_range': f'≥{min_extension}m',
                     'severity': 'high' if extension < 0.1 else 'medium'
                 })
                 feedback['score'] -= 0.3
@@ -297,10 +321,14 @@ class LeapAnalyticsService(BaseAnalyticsService):
                     elif hand_placement_deviation > 0.15:
                         hand_bone_score = 0.5
 
+                    # Generate specific tip based on actual measurement
+                    specific_tip = f"Your hands are {hand_placement_deviation:.2f}m from the ideal position (should be ≤{max_deviation}m). Move them closer to the edge of the box for better vault technique."
+                    
                     feedback['errors'].append({
                         'criterion': 'hand_placement',
-                        'improvement': threshold.get('tip', 'Place your hands closer to the edge of the box.'),
-                        'measurement': f'{hand_placement_deviation:.3f}m deviation',
+                        'improvement': specific_tip,
+                        'measurement': hand_placement_deviation,
+                        'ideal_range': f'≤{max_deviation}m',
                         'severity': 'high' if hand_placement_deviation > 0.2 else 'medium'
                     })
                     feedback['score'] -= 0.3
@@ -359,10 +387,15 @@ class LeapAnalyticsService(BaseAnalyticsService):
                 elif avg_leg_angle < 150:
                     leg_bone_score = 0.5
 
+                # Generate specific tip based on actual measurement
+                angle_short = min_angle - avg_leg_angle
+                specific_tip = f"Your legs are spread at {avg_leg_angle:.0f}° (should be ≥{min_angle}°). Spread them wider and keep them straight for better straddle position."
+                
                 feedback['errors'].append({
                     'criterion': 'legs_spread',
-                    'improvement': threshold.get('tip', 'Spread your legs straight and wide.'),
-                    'measurement': f'{avg_leg_angle:.1f}° (min: {min_angle}°)',
+                    'improvement': specific_tip,
+                    'measurement': avg_leg_angle,
+                    'ideal_range': f'≥{min_angle}°',
                     'severity': 'high' if avg_leg_angle < 140 else 'medium'
                 })
                 feedback['score'] -= 0.3
@@ -395,10 +428,17 @@ class LeapAnalyticsService(BaseAnalyticsService):
                 elif deviation > 10:
                     torso_bone_score = 0.5
 
+                # Generate specific tip based on actual measurement
+                if torso_angle < min_angle:
+                    specific_tip = f"Your torso is leaning forward at {torso_angle:.1f}° during flight (should be {min_angle}-{max_angle}°). Lean back to maintain upright and balanced posture."
+                else:
+                    specific_tip = f"Your torso is leaning backward at {torso_angle:.1f}° during flight (should be {min_angle}-{max_angle}°). Lean forward slightly to maintain upright and balanced posture."
+                
                 feedback['errors'].append({
                     'criterion': 'torso_upright',
-                    'improvement': threshold.get('tip', 'Keep your torso upright and balanced.'),
-                    'measurement': f'{torso_angle:.1f}° (target: {min_angle}-{max_angle}°)',
+                    'improvement': specific_tip,
+                    'measurement': torso_angle,
+                    'ideal_range': f'{min_angle}-{max_angle}°',
                     'severity': 'high' if deviation > 20 else 'medium'
                 })
                 feedback['score'] -= 0.2
@@ -441,10 +481,15 @@ class LeapAnalyticsService(BaseAnalyticsService):
                 elif feet_distance > 0.4:
                     landing_bone_score = 0.5
 
+                # Generate specific tip based on actual measurement
+                distance_over = feet_distance - max_distance
+                specific_tip = f"Your feet are {feet_distance:.2f}m apart during landing (should be ≤{max_distance}m). Bring them {distance_over:.2f}m closer together for a more stable landing."
+                
                 feedback['errors'].append({
                     'criterion': 'stable_landing',
-                    'improvement': threshold.get('tip', 'Land with feet together for stability.'),
-                    'measurement': f'{feet_distance:.3f}m apart (max: {max_distance}m)',
+                    'improvement': specific_tip,
+                    'measurement': feet_distance,
+                    'ideal_range': f'≤{max_distance}m',
                     'severity': 'high' if feet_distance > 0.5 else 'medium'
                 })
                 feedback['score'] -= 0.3

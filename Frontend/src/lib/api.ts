@@ -26,6 +26,9 @@ interface Error {
   criterion: string;
   improvement: string;
   frequency: number;
+  measurement?: number;
+  ideal_range?: string;
+  severity?: string;
 }
 
 export interface Pose {
@@ -66,11 +69,16 @@ export class ApiService {
     const headers: HeadersInit = {};
     if (userId) {
       headers['X-User-Id'] = userId;
+      console.log("✅ History - Adding X-User-Id header:", userId);
+    } else {
+      console.log("❌ History - No userId provided");
     }
 
     const response = await fetch(`${API_BASE_URL}/history`, { headers });
     if (!response.ok) throw new Error("Failed to fetch history");
-    return response.json();
+    const data = await response.json();
+    console.log("📦 History - Received data:", data);
+    return data;
   }
 
   static async uploadVideo(file: File, userId?: string): Promise<UploadResponse> {
@@ -80,6 +88,9 @@ export class ApiService {
     const headers: HeadersInit = {};
     if (userId) {
       headers['X-User-Id'] = userId;
+      console.log("✅ Adding X-User-Id header:", userId);
+    } else {
+      console.log("❌ No userId provided to uploadVideo");
     }
 
     const response = await fetch(`${API_BASE_URL}/upload`, {

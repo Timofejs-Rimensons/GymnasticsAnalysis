@@ -17,12 +17,15 @@ export default function HistoryPage() {
     async function loadHistory() {
       try {
         const userId = session?.user?.id;
+        console.log("🔍 History - Session:", session);
+        console.log("🔍 History - User ID:", userId);
+
         const data = await ApiService.getHistory(userId);
         const mapped = data.map((item: any) => ({
             id: item.id,
             date: item.created_at ? new Date(item.created_at).toLocaleDateString() : "Unknown",
-            exerciseType: item.exercise_type || "Unknown",
-            score: item.score || 0,
+            exerciseType: item.exerciseType || "Unknown",
+            score: item.score !== null && item.score !== undefined ? item.score : null,
             status: item.status,
             thumbnailUrl: null
         }));
