@@ -1,6 +1,6 @@
 services:
   database:
-    image: postgres:16
+    image: ghcr.io/tofa-rimensons/gymnastics-database:latest
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-gymnastics}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gymnastics_password}
@@ -9,7 +9,6 @@ services:
       - "${DB_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gymnastics -d gymnastics_db"]
       interval: 5s
@@ -55,4 +54,5 @@ services:
 volumes:
   temp_data:
   postgres_data:
+
 
