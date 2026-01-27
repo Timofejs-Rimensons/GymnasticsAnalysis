@@ -120,7 +120,7 @@ export default function LandingPage() {
       
       <footer className="py-12 border-t-2 border-border bg-background">
          <div className="container mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-            <p className="font-mono text-sm text-muted-foreground">© 2026 Gymnastics Analysis AI. All rights reserved.</p>
+            <p className="font-mono text-sm text-muted-foreground">© 2026 GymPraecisio AI. All rights reserved.</p>
             <div className="flex gap-6">
                <Link href="#" className="font-bold uppercase text-sm hover:text-accent transition-colors">Privacy</Link>
                <Link href="#" className="font-bold uppercase text-sm hover:text-accent transition-colors">Terms</Link>

@@ -47,7 +47,7 @@ export function Navbar() {
               className="font-black text-lg uppercase tracking-tight hidden sm:block"
               style={{ fontFamily: "'Archivo Black', sans-serif" }}
             >
-              GymAnalysis
+              GymPraecisio
             </span>
           </Link>
 
