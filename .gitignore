@@ -281,10 +281,10 @@ UpgradeLog*.htm
 ServiceFabricBackup/
 *.rptproj.bak
 
-# SQL Server files
-*.mdf
-*.ldf
-*.ndf
+# # SQL Server files
+# *.mdf
+# *.ldf
+# *.ndf
 
 # Business Intelligence projects
 *.rdl.data
@@ -484,7 +484,8 @@ lerna-debug.log*
 !.vscode/tasks.json
 
 Labeling
-Backend
 .claude
 .venv
 .temp
+!init_db.sql 
+!schema.sql
