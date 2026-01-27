@@ -487,5 +487,3 @@ Labeling
 .claude
 .venv
 .temp
-!init_db.sql 
-!schema.sql

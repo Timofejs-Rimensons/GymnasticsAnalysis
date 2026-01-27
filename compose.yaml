@@ -2,11 +2,11 @@ services:
   database:
     image: postgres:16
     environment:
-      POSTGRES_USER: gymnastics
-      POSTGRES_PASSWORD: gymnastics_password
-      POSTGRES_DB: gymnastics_db
+      POSTGRES_USER: ${POSTGRES_USER:-gymnastics}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gymnastics_password}
+      POSTGRES_DB: ${POSTGRES_DB:-gymnastics_db}
     ports:
-      - "5433:5432"
+      - "${DB_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./Backend/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
@@ -23,7 +23,7 @@ services:
     volumes:
       - temp_data:/app/.temp
     environment:
-      - DATABASE_URL=postgresql://gymnastics:gymnastics_password@database:5432/gymnastics_db
+      - DATABASE_URL=${DATABASE_URL:-postgresql://gymnastics:gymnastics_password@database:5432/gymnastics_db}
     depends_on:
       database:
         condition: service_healthy
@@ -35,13 +35,13 @@ services:
   frontend:
     build: ./Frontend
     ports:
-      - "8080:80"
+      - "${FRONTEND_PORT:-8080}:80"
     environment:
-      - VITE_API_BASE_URL=/api
-      - BACKEND_URL=http://backend:8000/api
-      - DATABASE_URL=postgresql://gymnastics:gymnastics_password@database:5432/gymnastics_db
-      - NEXTAUTH_URL=http://localhost:8080
-      - NEXTAUTH_SECRET=development-secret-key-123-change-me-in-production
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-/api}
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000/api}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://gymnastics:gymnastics_password@database:5432/gymnastics_db}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:8080}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-development-secret-key-123-change-me-in-production}
     depends_on:
       database:
         condition: service_healthy
