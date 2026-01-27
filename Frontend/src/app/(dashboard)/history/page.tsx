@@ -25,8 +25,8 @@ export default function HistoryPage() {
             id: item.id,
             // Map created_at to date
             date: item.created_at ? new Date(item.created_at).toLocaleDateString() : "Unknown",
-            // Map exercise_type to exerciseType
-            exerciseType: item.exercise_type || "Unknown",
+            // Map exerciseType (already in camelCase from Next.js API)
+            exerciseType: item.exerciseType || "Unknown",
             // Use .score (as formatted by API)
             score: item.score || 0,
             status: item.status,
