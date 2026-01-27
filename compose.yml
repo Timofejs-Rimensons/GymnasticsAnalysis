@@ -9,7 +9,7 @@ services:
       - "${DB_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./Backend/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gymnastics -d gymnastics_db"]
       interval: 5s
@@ -55,3 +55,4 @@ services:
 volumes:
   temp_data:
   postgres_data:
+
