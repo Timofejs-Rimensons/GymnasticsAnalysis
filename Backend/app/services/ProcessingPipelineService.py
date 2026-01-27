@@ -29,6 +29,23 @@ class ProcessingPipelineService:
             verbose=True
         )
 
+        # Display name mapping for pose labels
+        self.display_names = {
+            'Flight1': 'First Flight Phase',
+            'Flight2': 'Second Flight Phase',
+            'Run-up': 'Run-up',
+            'Take-off': 'Take-off',
+            'Landing': 'Landing',
+            'Starting': 'Starting',
+            'Swing': 'Swing',
+            'Handstand': 'Handstand',
+            'HandPlacement': 'Hand Placement'
+        }
+
+    def _get_display_name(self, pose_name: str) -> str:
+        """Convert technical pose name to user-friendly display name."""
+        return self.display_names.get(pose_name, pose_name)
+
     def _update_status(self, status_json_path: str, status: str, progress: float):
         try:
             with open(status_json_path, 'r+') as f:
@@ -55,11 +72,12 @@ class ProcessingPipelineService:
                 aggregated = analytics_per_pose[pose]
                 pose_errors = aggregated.get('common_errors', [])
 
+            display_name = self._get_display_name(pose)
             pose_categories.append({
-                "name": pose,
+                "name": display_name,
                 "score": round(score * 100),
                 "max_score": 100,
-                "description": f"Analysis of {pose} phase",
+                "description": f"Analysis of {display_name} phase",
                 "improvement_needed": improvement_needed,
                 "errors": pose_errors
             })
@@ -241,9 +259,9 @@ class ProcessingPipelineService:
         frame_annotations = [
             {
                 "label": (
-                    f"{processed_labels[i]} | Score: {analytics_per_frame[i]['score']:.2f}"
+                    f"{self._get_display_name(processed_labels[i])} | Score: {analytics_per_frame[i]['score']:.2f}"
                     if analytics_per_frame[i] and 'score' in analytics_per_frame[i]
-                    else processed_labels[i]
+                    else self._get_display_name(processed_labels[i])
                 ),
                 "segment_scores": (
                     analytics_per_frame[i]['bone_scores']

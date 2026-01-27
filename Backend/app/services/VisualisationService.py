@@ -136,10 +136,7 @@ def _draw_pose_on_frame(frame, frame_data, pose_label_text, is_overlay, segment_
         frame_height, frame_width, _ = frame.shape
         padding = 20
         line_spacing = 45
-
-        # Calculate starting position (right side with padding)
         right_margin = 30
-        x_position = frame_width - 450 - right_margin  # Adjust based on typical text width
         y_position = 40
 
         # Semi-transparent dark background (RGBA: Black with 75% opacity)
@@ -165,6 +162,11 @@ def _draw_pose_on_frame(frame, frame_data, pose_label_text, is_overlay, segment_
             max_width = max(max_width, line_width)
             line_dimensions.append((line_width, line_height))
             total_height += line_height + (line_spacing - line_height) if i < len(lines) - 1 else line_height
+
+        # Calculate x_position based on actual text width, ensuring it fits on screen
+        box_width = max_width + padding * 2
+        # Try to position on the right, but ensure it doesn't go off screen
+        x_position = max(padding, frame_width - box_width - right_margin)
 
         # Draw one continuous background rectangle with rounded corners for all text
         bg_rect = [
