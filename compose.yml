@@ -7,8 +7,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-gymnastics_db}
     ports:
       - "${DB_PORT:-5433}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gymnastics -d gymnastics_db"]
       interval: 5s
@@ -19,8 +17,6 @@ services:
     image: ghcr.io/tofa-rimensons/gymnastics-backend:latest
     expose:
       - 8000
-    volumes:
-      - temp_data:/app/.temp
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql://gymnastics:gymnastics_password@database:5432/gymnastics_db}
     depends_on:
@@ -50,9 +46,3 @@ services:
       test: ["CMD-SHELL", "--interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget --quiet --tries=1 --spider http://localhost/api/health || exit 1"]
       interval: 10s
       timeout: 10s
-
-volumes:
-  temp_data:
-  postgres_data:
-
-
